@@ -5,17 +5,17 @@
       "cflags!": [ "-fno-exceptions" ],
       "cflags_cc!": [ "-fno-exceptions" ],
       "sources": [
-        "backend/cpp/node_binding.cpp",
-        "backend/cpp/graph.cpp",
-        "backend/cpp/dijkstra.cpp",
-        "backend/cpp/min_heap.cpp",
-        "backend/cpp/driver_manager.cpp",
-        "backend/cpp/ride_matcher.cpp",
-        "backend/cpp/city_graph_generator.cpp"
+        "backend/cpp/src/node_binding.cpp",
+        "backend/cpp/src/graph.cpp",
+        "backend/cpp/src/dijkstra.cpp",
+        "backend/cpp/src/min_heap.cpp",
+        "backend/cpp/src/driver_manager.cpp",
+        "backend/cpp/src/ride_matcher.cpp",
+        "backend/cpp/src/city_graph_generator.cpp"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
-        "backend/cpp/include"
+        "backend/cpp"
       ],
       "defines": [ "NAPI_DISABLE_CPP_EXCEPTIONS" ],
       "msvs_settings": {
