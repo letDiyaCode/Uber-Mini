@@ -28,6 +28,13 @@ class UIController {
         this.matchingLogs = document.getElementById('matching-logs');
 
         this.setupEventListeners();
+
+        this.updateLogs({
+            dijkstra: ['Waiting for ride request...'],
+            heap: ['Waiting for ride request...'],
+            matching: ['Waiting for ride request...']
+        });
+
     }
 
     /**
