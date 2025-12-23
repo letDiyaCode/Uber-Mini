@@ -28,8 +28,9 @@ A complete **ride-sharing matching system** demonstrating advanced **Data Struct
 ## 🚀 Quick Start
 
 ```bash
-npm install    # Builds C++ backend automatically
-npm start      # Starts server on port 3000
+git clone "https://github.com/letDiyaCode/Uber-Mini"      # Clone the Repo
+npm install                                               # Builds C++ backend automatically
+npm start                                                 # Starts server on port 3000
 ```
 
 Visit: http://localhost:3000
