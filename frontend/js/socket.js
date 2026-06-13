@@ -20,7 +20,6 @@ class LiveConnection {
     }
 
     connect() {
-        // io() is provided by /socket.io/socket.io.js served by the backend.
         this.socket = io();
 
         this.socket.on('connect', () => this._emit('status', { connected: true }));
@@ -30,6 +29,14 @@ class LiveConnection {
         this.socket.on('drivers:update', (drivers) => this._emit('drivers', drivers));
         this.socket.on('ride:update', (ride) => this._emit('ride', ride));
         this.socket.on('stats:update', (stats) => this._emit('stats', stats));
+    }
+
+    claim(driverId, cb) {
+        if (this.socket) this.socket.emit('driver:claim', { driverId }, cb);
+    }
+
+    release(driverId) {
+        if (this.socket) this.socket.emit('driver:release', { driverId });
     }
 }
 

@@ -36,6 +36,7 @@ const CONFIG = {
     maxCandidates: 5,         // drivers to route-evaluate per request
     prefilterK: 20,           // nearest-by-air drivers to route (>= fleet size → exact nearest)
     demandWindowMs: 5 * 60 * 1000,
+    manualOfferTimeoutMs: 25000, // auto-decline if a human driver doesn't respond
 };
 
 class RideService {
@@ -50,6 +51,7 @@ class RideService {
         this.rides = new Map();        // rideId -> ride
         this.recentRequests = [];      // { ts, node } for demand/surge
         this.grid = new SpatialGrid(0.01);
+        this.claimedDrivers = new Set(); // drivers controlled by a human (driver UI)
 
         this._buildNodeCoords();
         this._buildFleet();
@@ -83,6 +85,8 @@ class RideService {
                 status: d.isAvailable ? DriverStatus.AVAILABLE : DriverStatus.OFFLINE,
                 rideId: null,
                 movement: null,
+                sessionTrips: 0,
+                sessionEarnings: 0,
             });
         }
     }
@@ -132,11 +136,19 @@ class RideService {
             status: d.status,
             isAvailable: d.status === DriverStatus.AVAILABLE,
             rideId: d.rideId,
+            sessionTrips: d.sessionTrips,
+            sessionEarnings: d.sessionEarnings,
         };
     }
 
     getRide(rideId) {
         return this.rides.get(rideId) || null;
+    }
+
+    getActiveRidesForPassenger(passengerId) {
+        return Array.from(this.rides.values())
+            .filter((r) => r.passengerId === passengerId && this._isActive(r))
+            .map((r) => this._rideView(r));
     }
 
     getStats() {
@@ -178,16 +190,8 @@ class RideService {
     }
 
     _currentSurge(pickupNode = null) {
-        this._pruneDemand();
-        const pending = Array.from(this.rides.values()).filter(
-            (r) => r.status === RideState.REQUESTED || r.status === RideState.OFFERED
-        ).length;
-        const activeDemand = pending + this.recentRequests.length;
-        return pricing.computeSurge({
-            activeDemand,
-            availableSupply: this._availableCount(),
-            hotspotBoost: pickupNode !== null ? this._hotspotBoost(pickupNode) : 0,
-        });
+        // Surge pricing disabled — fares are flat (1.0x).
+        return 1.0;
     }
 
     estimate(pickup, destination, vehicleType = 'Sedan') {
@@ -261,38 +265,46 @@ class RideService {
     _matchRide(ride) {
         const pickupCoord = this.nodeCoords.get(ride.pickup);
 
-        // 1) Spatial prefilter: nearest available drivers of the REQUESTED
-        //    vehicle type, by straight-line distance.
+        // Spatial prefilter: all available drivers, nearest first by air distance.
         this.grid.clear();
         for (const d of this.fleet.values()) {
-            if (d.status === DriverStatus.AVAILABLE && d.vehicleType === ride.vehicleType) {
+            if (d.status === DriverStatus.AVAILABLE) {
                 this.grid.insert(d.id, d.lat, d.lon);
             }
         }
         const near = this.grid.nearest(pickupCoord.lat, pickupCoord.lon, CONFIG.prefilterK);
 
-        // 2) Accurate routing on the candidates via the C++ engine.
-        const candidates = [];
+        // Route each candidate via the C++ engine for an accurate pickup ETA.
+        const routed = [];
         for (const cand of near) {
             const d = this.fleet.get(cand.id);
             const route = this.matcher.computePath(d.node, ride.pickup);
             if (route.found) {
-                candidates.push({
+                routed.push({
                     driverId: d.id,
+                    vehicleType: d.vehicleType,
                     distanceKm: Number(route.distance.toFixed(2)),
                     etaMin: Number(route.eta.toFixed(1)),
                     path: route.path,
                 });
             }
         }
-        // 3) Rank by pickup ETA (greedy nearest by road time).
-        candidates.sort((a, b) => a.etaMin - b.etaMin);
-        ride.candidates = candidates.slice(0, CONFIG.maxCandidates);
+
+        // Offer to the requested vehicle type first (nearest → next), then fall
+        // back to other vehicle types if none of them accept.
+        const sameType = routed
+            .filter((c) => c.vehicleType === ride.vehicleType)
+            .sort((a, b) => a.etaMin - b.etaMin);
+        const otherType = routed
+            .filter((c) => c.vehicleType !== ride.vehicleType)
+            .sort((a, b) => a.etaMin - b.etaMin);
+
+        ride.candidates = [...sameType.slice(0, 6), ...otherType.slice(0, 4)];
         ride.candidateIndex = 0;
 
         if (ride.candidates.length === 0) {
             ride.status = RideState.NO_DRIVERS;
-            this._pushTimeline(ride, `No ${ride.vehicleType} drivers available nearby`);
+            this._pushTimeline(ride, 'No drivers available nearby');
             return;
         }
         this._offerNext(ride);
@@ -325,18 +337,32 @@ class RideService {
         driver.status = DriverStatus.OFFERED;
         driver.rideId = ride.id;
 
+        // Note when we've fallen back to a different vehicle type.
+        if (driver.vehicleType !== ride.vehicleType) {
+            this._pushTimeline(ride, `No ${ride.vehicleType} available — offering ${driver.vehicleType}`);
+        }
+
         this._pushTimeline(ride, `Offered to ${driver.name} (${cand.etaMin} min away)`);
         this._emitRide(ride);
         this._emitDrivers();
 
-        ride._offerTimer = setTimeout(() => {
-            const accepts = Math.random() < CONFIG.acceptProbability;
-            if (accepts) {
-                this.acceptOffer(ride.id, driver.id);
-            } else {
+        if (this.claimedDrivers.has(driver.id)) {
+            // Human-controlled driver: wait for manual accept/decline, with a
+            // safety timeout so the rider isn't left hanging.
+            ride._offerTimer = setTimeout(() => {
                 this.declineOffer(ride.id, driver.id);
-            }
-        }, CONFIG.offerDecisionMs);
+            }, CONFIG.manualOfferTimeoutMs);
+        } else {
+            // Simulated driver decides on its own.
+            ride._offerTimer = setTimeout(() => {
+                const accepts = Math.random() < CONFIG.acceptProbability;
+                if (accepts) {
+                    this.acceptOffer(ride.id, driver.id);
+                } else {
+                    this.declineOffer(ride.id, driver.id);
+                }
+            }, CONFIG.offerDecisionMs);
+        }
     }
 
     acceptOffer(rideId, driverId) {
@@ -431,6 +457,8 @@ class RideService {
         driver.lat = destCoord.lat;
         driver.lon = destCoord.lon;
         driver.completedRides += 1;
+        driver.sessionTrips += 1;
+        driver.sessionEarnings += ride.fareFinal.total;
         driver.status = DriverStatus.AVAILABLE;
         driver.rideId = null;
         driver.movement = null;
@@ -486,6 +514,23 @@ class RideService {
         }
         this._emitDrivers();
         return { success: true, data: this._driverView(driver) };
+    }
+
+    claimDriver(driverId) {
+        const driver = this.fleet.get(driverId);
+        if (!driver) return { success: false, error: 'Driver not found' };
+        this.claimedDrivers.add(driverId);
+        return { success: true, data: this._driverView(driver) };
+    }
+
+    releaseDriver(driverId) {
+        this.claimedDrivers.delete(driverId);
+        for (const ride of this.rides.values()) {
+            if (ride.status === RideState.OFFERED && ride.driverId === driverId) {
+                this.declineOffer(ride.id, driverId);
+            }
+        }
+        return { success: true };
     }
 
     _startMovement(driver, path, onComplete) {

@@ -40,6 +40,9 @@ class MapRenderer {
 
         // Rendering state
         this.scale = 1.0;
+        this.targetScale = 1.0;
+        this._zoomRAF = null;
+        this._zoomAnchor = null;
         this.offsetX = 0;
         this.offsetY = 0;
         this.showLabels = true;
@@ -57,6 +60,9 @@ class MapRenderer {
         // Hover tooltip
         this.tooltip = document.getElementById('map-tooltip');
         this.driverHitboxes = []; // { driver, x, y, r } computed each draw
+
+        // Reserve space on the right (e.g., for an overlay card) when centering.
+        this.rightInset = 0;
 
         this.initCanvas();
         this.setupEventListeners();
@@ -77,12 +83,24 @@ class MapRenderer {
         });
     }
 
+    /** Recompute canvas size from its container and recenter (after show/layout change). */
+    resize() {
+        const container = this.canvas.parentElement;
+        if (!container) return;
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+        this.centerView();
+        this.render();
+    }
+
     /**
      * Setup mouse event listeners for pan functionality
      */
     setupEventListeners() {
         this.canvas.addEventListener('mousedown', (e) => {
             this.isDragging = true;
+            this._dragged = false;
+            this._cancelZoom();
             this.lastMouseX = e.clientX;
             this.lastMouseY = e.clientY;
         });
@@ -114,15 +132,14 @@ class MapRenderer {
             this.hideTooltip();
         });
 
-        // Mouse wheel for zoom
+        // Mouse wheel for smooth zoom toward the cursor
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const zoomSpeed = 0.1;
-            const delta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
-
-            this.scale = Math.max(0.2, Math.min(3.0, this.scale + delta));
-            this.render();
-        });
+            const rect = this.canvas.getBoundingClientRect();
+            const delta = Math.max(-50, Math.min(50, e.deltaY));
+            const factor = Math.exp(-delta * 0.005);
+            this.zoomTo(this.targetScale * factor, e.clientX - rect.left, e.clientY - rect.top);
+        }, { passive: false });
     }
 
     /**
@@ -254,13 +271,17 @@ class MapRenderer {
         const latRange = maxLat - minLat || 0.1;
         const lonRange = maxLon - minLon || 0.1;
 
-        const scaleX = this.canvas.width / (lonRange * 10000);
+        // Centre within the area not covered by an overlay on the right.
+        const availW = Math.max(100, this.canvas.width - this.rightInset);
+
+        const scaleX = availW / (lonRange * 10000);
         const scaleY = this.canvas.height / (latRange * 10000);
 
         this.scale = Math.min(scaleX, scaleY) * 0.8;
+        this.targetScale = this.scale;
 
         // Center offset
-        this.offsetX = this.canvas.width / 2;
+        this.offsetX = availW / 2;
         this.offsetY = this.canvas.height / 2;
 
         // Store center for coordinate conversion
@@ -278,25 +299,68 @@ class MapRenderer {
     }
 
     /**
-     * Zoom in
+     * Smoothly zoom toward a target scale, anchored at screen point (sx, sy).
      */
+    zoomTo(newScale, sx, sy) {
+        const clamped = Math.max(0.2, Math.min(3.5, newScale));
+        if (sx === undefined) sx = this.canvas.width / 2;
+        if (sy === undefined) sy = this.canvas.height / 2;
+
+        // World point currently under the anchor (kept fixed during the zoom).
+        const lon = (sx - this.offsetX) / (10000 * this.scale) + this.centerLon;
+        const lat = this.centerLat - (sy - this.offsetY) / (10000 * this.scale);
+        this._zoomAnchor = { sx, sy, lon, lat };
+        this.targetScale = clamped;
+        this._animateZoom();
+    }
+
+    _cancelZoom() {
+        if (this._zoomRAF) {
+            cancelAnimationFrame(this._zoomRAF);
+            this._zoomRAF = null;
+        }
+        this.targetScale = this.scale;
+    }
+
+    _animateZoom() {
+        if (this._zoomRAF) return;
+        const step = () => {
+            const ds = this.targetScale - this.scale;
+            // Ease the scale; snap when close enough.
+            if (Math.abs(ds) < 0.002) {
+                this.scale = this.targetScale;
+            } else {
+                this.scale += ds * 0.12;
+            }
+
+            // Re-anchor so the chosen point stays under the cursor/center.
+            if (this._zoomAnchor) {
+                const a = this._zoomAnchor;
+                this.offsetX = a.sx - (a.lon - this.centerLon) * 10000 * this.scale;
+                this.offsetY = a.sy + (a.lat - this.centerLat) * 10000 * this.scale;
+            }
+            this.render();
+
+            if (this.scale !== this.targetScale) {
+                this._zoomRAF = requestAnimationFrame(step);
+            } else {
+                this._zoomRAF = null;
+                this._zoomAnchor = null;
+            }
+        };
+        this._zoomRAF = requestAnimationFrame(step);
+    }
+
     zoomIn() {
-        this.scale = Math.min(3.0, this.scale + 0.2);
-        this.render();
+        this.zoomTo(this.targetScale * 1.15);
     }
 
-    /**
-     * Zoom out
-     */
     zoomOut() {
-        this.scale = Math.max(0.2, this.scale - 0.2);
-        this.render();
+        this.zoomTo(this.targetScale / 1.15);
     }
 
-    /**
-     * Reset view
-     */
     resetView() {
+        this._cancelZoom();
         this.centerView();
         this.render();
     }
@@ -309,8 +373,7 @@ class MapRenderer {
         this.render();
     }
 
-    // Render the active rides; paths are drawn statically and the moving driver
-    // marker provides the live motion.
+    // Render the active rides; the moving driver marker provides the live motion.
     setActiveRides(rides) {
         this.activeRides = Array.isArray(rides) ? rides : [];
         this.activeDriverIds = new Set(
@@ -352,8 +415,8 @@ class MapRenderer {
     drawEdges() {
         if (!this.graph.edges) return;
 
-        this.ctx.strokeStyle = '#d0d0d0';
-        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = 'rgba(30, 41, 90, 0.13)';
+        this.ctx.lineWidth = 1.5;
 
         for (const edge of this.graph.edges) {
             const sourceNode = this.graph.nodes.find(n => n.id === edge.source);
@@ -382,7 +445,7 @@ class MapRenderer {
                 this.ctx.fillRect(midX - textWidth / 2 - 3, midY - 8, textWidth + 6, 16);
 
                 // Weight text
-                this.ctx.fillStyle = '#555';
+                this.ctx.fillStyle = '#5b6480';
                 this.ctx.font = 'bold 11px Arial';
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
@@ -401,13 +464,13 @@ class MapRenderer {
 
             if (ride.status === 'OFFERED' || ride.status === 'ACCEPTED' || ride.status === 'ARRIVING') {
                 // Driver heading to pickup (green), trimmed ahead of the driver.
-                this.drawRemainingPath(ride.pickupPath, from, '#5cb85c', 4);
+                this.drawRemainingPath(ride.pickupPath, from, '#3f8d75', 4);
             } else if (ride.status === 'ARRIVED') {
-                // Upcoming trip, not yet started — show full route (blue).
-                this.drawRemainingPath(ride.tripPath, null, '#0066ff', 5);
+                // Upcoming trip, not yet started — show full route (sky).
+                this.drawRemainingPath(ride.tripPath, null, '#38bdf8', 5);
             } else if (ride.status === 'IN_PROGRESS') {
-                // Trip in progress (blue), trimmed ahead of the driver.
-                this.drawRemainingPath(ride.tripPath, from, '#0066ff', 5);
+                // Trip in progress (sky), trimmed ahead of the driver.
+                this.drawRemainingPath(ride.tripPath, from, '#38bdf8', 5);
             }
         }
     }
@@ -495,22 +558,22 @@ class MapRenderer {
             if (endpoints.has(node.id)) continue;
 
             // Draw node circle
-            this.ctx.fillStyle = '#6c757d';
+            this.ctx.fillStyle = '#9aa3c4';
             this.ctx.beginPath();
-            this.ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+            this.ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
             this.ctx.fill();
 
             // Draw node border
-            this.ctx.strokeStyle = '#495057';
-            this.ctx.lineWidth = 2;
+            this.ctx.strokeStyle = 'rgba(30, 40, 80, 0.3)';
+            this.ctx.lineWidth = 1.5;
             this.ctx.stroke();
 
             // Draw label
             if (this.showLabels && this.scale > 0.5) {
-                this.ctx.fillStyle = '#212529';
-                this.ctx.font = '12px Arial';
+                this.ctx.fillStyle = '#3b4263';
+                this.ctx.font = '11px Inter, Arial';
                 this.ctx.textAlign = 'center';
-                this.ctx.fillText(node.name, pos.x, pos.y - 12);
+                this.ctx.fillText(node.name, pos.x, pos.y - 11);
             }
         }
     }
@@ -537,10 +600,10 @@ class MapRenderer {
             const pulse = Math.sin(Date.now() * 0.003) * 0.2 + 1;
 
             let color;
-            if (isAssigned) color = '#FFD700';
-            else if (isOffline) color = '#b0b0b0';
-            else if (driver.status === 'available') color = '#5cb85c';
-            else color = '#f0ad4e'; // busy / on a ride
+            if (isAssigned) color = '#ffd23f';
+            else if (isOffline) color = '#6b6880';
+            else if (driver.status === 'available') color = '#3f8d75';
+            else color = '#fbbf24'; // busy / on a ride
 
             // Dim offline drivers.
             this.ctx.globalAlpha = isOffline ? 0.5 : 1.0;
@@ -585,8 +648,8 @@ class MapRenderer {
 
             this.ctx.globalAlpha = 1.0;
 
-            // Record hitbox for hover tooltip (slightly larger than the disc).
-            this.driverHitboxes.push({ driver, x: pos.x, y: pos.y, r: radius + 6 });
+            // Record hitbox for hover tooltip (the visible circle incl. its ring).
+            this.driverHitboxes.push({ driver, x: pos.x, y: pos.y, r: radius + 3 });
         }
     }
 
@@ -598,7 +661,7 @@ class MapRenderer {
         const node = this.graph.nodes.find((n) => n.id === nodeId);
         if (!node) return;
         const pos = this.latLonToCanvas(node.latitude, node.longitude);
-        const color = isPickup ? '#0066ff' : '#ff3366';
+        const color = isPickup ? '#38bdf8' : '#fb7185';
         const label = isPickup ? 'P' : 'D';
         const pulse = Math.sin(Date.now() * 0.005) * 3 + 12;
 

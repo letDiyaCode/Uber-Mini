@@ -3,185 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Uber Mini - Ride Sharing System</title>
+    <title>Uber Mini · Choose your experience</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-    <div class="app-container">
+    <div class="aurora"></div>
+
+    <div class="page">
         <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <h1 class="app-title">🚗 UBER MINI</h1>
-                <p class="app-subtitle">Real-Time Ride Sharing with Live Matching, Pricing & Surge</p>
-            </div>
-            <div class="header-stats">
-                <div class="stat-card">
-                    <span class="stat-label">Available Drivers</span>
-                    <span class="stat-value" id="available-drivers">0</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">Active Rides</span>
-                    <span class="stat-value" id="active-rides">0</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">Total Nodes</span>
-                    <span class="stat-value" id="total-nodes">0</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-label">Surge</span>
-                    <span class="stat-value" id="surge-value">1.0x</span>
-                </div>
-            </div>
+        <header class="site-header">
+            <a class="site-brand" href="index.html"><span class="site-logo">🚗</span> UBER<b>MINI</b></a>
+            <nav class="site-nav">
+                <a href="rider.html" class="site-link">🧍 Ride</a>
+                <a href="driver.html" class="site-link primary">🚗 Drive</a>
+            </nav>
         </header>
 
-        <!-- Main Content -->
-        <div class="main-content">
-            <!-- Left Panel: Map Visualization -->
-            <div class="map-panel">
-                <div class="panel-header">
-                    <h2>City Map — Live</h2>
-                    <div class="map-controls">
-                        <button id="zoom-in-btn" class="control-btn" title="Zoom In">🔍+</button>
-                        <button id="zoom-out-btn" class="control-btn" title="Zoom Out">🔍-</button>
-                        <button id="reset-view-btn" class="control-btn" title="Reset View">🔄</button>
-                        <button id="toggle-labels-btn" class="control-btn" title="Toggle Labels">🏷️</button>
-                    </div>
-                </div>
-                <div class="map-container">
-                    <canvas id="city-map"></canvas>
-                    <div class="map-legend">
-                        <div class="legend-item">
-                            <span class="legend-icon node-icon"></span><span>Location</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-icon driver-icon"></span><span>Available Driver</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-icon" style="background:#FFD700;box-shadow:0 0 8px rgba(255,215,0,.5);"></span><span>Your Driver</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-icon pickup-icon"></span><span>Pickup</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-icon destination-icon"></span><span>Destination</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-icon route-line"></span><span>Route</span>
-                        </div>
-                        <div class="legend-item"><span>🚗</span><span>Compact</span></div>
-                        <div class="legend-item"><span>🚕</span><span>Sedan</span></div>
-                        <div class="legend-item"><span>🚙</span><span>SUV</span></div>
-                        <div class="legend-item"><span>🏎️</span><span>Luxury</span></div>
-                    </div>
-                    <div id="connection-badge" class="connection-badge offline">● connecting…</div>
-                    <div id="map-tooltip" class="map-tooltip"></div>
-                </div>
+        <!-- Body -->
+        <main class="landing">
+            <div class="landing-hero">
+                <div class="hero-logo">🚗</div>
+                <h1 class="hero-title">UBER<span>MINI</span></h1>
+                <p class="hero-sub">Book a ride or hit the road to earn — with real-time matching, a live map you can watch, and upfront fares.</p>
             </div>
 
-            <!-- Right Panel: Controls and Information -->
-            <div class="control-panel">
-                <!-- Ride Request Form -->
-                <div class="panel-section">
-                    <h2 class="section-title">Book a Ride</h2>
-                    <form id="ride-request-form">
-                        <div class="form-group">
-                            <label for="pickup-select">Pickup Location</label>
-                            <select id="pickup-select" required>
-                                <option value="">Select pickup location...</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="destination-select">Destination</label>
-                            <select id="destination-select" required>
-                                <option value="">Select destination...</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Vehicle Type</label>
-                            <div id="vehicle-options" class="vehicle-options"></div>
-                        </div>
+            <div class="role-cards">
+                <a class="role-card rider" href="rider.html">
+                    <div class="role-emoji">🧍</div>
+                    <h2>I'm a Rider</h2>
+                    <p>Pick your pickup and drop, choose a ride, and watch your driver arrive in real time.</p>
+                    <span class="role-go">Start riding →</span>
+                </a>
 
-                        <!-- Fare estimate -->
-                        <div id="fare-estimate" class="fare-estimate" style="display:none;"></div>
+                <a class="role-card driver" href="driver.html">
+                    <div class="role-emoji">🚗</div>
+                    <h2>I'm a Driver</h2>
+                    <p>Go online, get ride requests, accept the ones you like, and complete trips to earn.</p>
+                    <span class="role-go">Start driving →</span>
+                </a>
+            </div>
 
-                        <button type="submit" class="btn btn-primary" id="request-ride-btn">
-                            Request Ride
-                        </button>
-                    </form>
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-text"><strong>Instant matching</strong><span>Nearest driver, in a blink</span></div>
                 </div>
-
-                <!-- Active Rides -->
-                <div class="panel-section" id="ride-status-section" style="display:none;">
-                    <h3 class="section-title">Your Rides</h3>
-                    <div id="ride-status-content"></div>
+                <div class="feature">
+                    <div class="feature-icon">🗺️</div>
+                    <div class="feature-text"><strong>Live tracking</strong><span>Follow every turn on the map</span></div>
                 </div>
-
-                <!-- Driver List -->
-                <div class="panel-section">
-                    <h3 class="section-title">Drivers</h3>
-                    <div id="driver-list" class="driver-list"></div>
+                <div class="feature">
+                    <div class="feature-icon">💸</div>
+                    <div class="feature-text"><strong>Upfront fares</strong><span>Know the price before you book</span></div>
                 </div>
-
-                <!-- Live Activity Log -->
-                <div class="panel-section">
-                    <h3 class="section-title">Live Activity</h3>
-                    <div id="activity-log" class="log-container active"></div>
+                <div class="feature">
+                    <div class="feature-icon">🚘</div>
+                    <div class="feature-text"><strong>4 ride types</strong><span>Compact · Sedan · SUV · Luxury</span></div>
                 </div>
             </div>
-        </div>
+        </main>
 
-        <!-- DSA Concepts Info -->
-        <div class="dsa-info">
-            <h3>DSA Concepts Implemented</h3>
-            <div class="dsa-concepts">
-                <div class="concept-card">
-                    <div class="concept-icon">📊</div>
-                    <div class="concept-name">Graph (Adjacency List)</div>
-                    <div class="concept-desc">City map representation</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">🔍</div>
-                    <div class="concept-name">Dijkstra's Algorithm</div>
-                    <div class="concept-desc">Shortest path routing</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">⚡</div>
-                    <div class="concept-name">Min-Heap Priority Queue</div>
-                    <div class="concept-desc">Efficient distance tracking</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">🗂️</div>
-                    <div class="concept-name">HashMap</div>
-                    <div class="concept-desc">Driver database O(1) lookup</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">🧭</div>
-                    <div class="concept-name">Spatial Grid Index</div>
-                    <div class="concept-desc">Nearest-driver candidate search</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">🪟</div>
-                    <div class="concept-name">Sliding Window</div>
-                    <div class="concept-desc">Demand-based surge pricing</div>
-                </div>
-                <div class="concept-card">
-                    <div class="concept-icon">🎯</div>
-                    <div class="concept-name">Greedy Matching</div>
-                    <div class="concept-desc">Lowest-ETA driver wins</div>
-                </div>
+        <!-- Footer -->
+        <footer class="site-footer">
+            <div class="footer-left">© 2025 Uber Mini · A ride-sharing simulation</div>
+            <div class="footer-stats">
+                <span><b id="f-drivers">—</b> drivers</span>
+                <span class="dot-sep">•</span>
+                <span><b id="f-nodes">—</b> locations</span>
+                <span class="dot-sep">•</span>
+                <span class="footer-live"><span class="live-dot"></span> live</span>
             </div>
-        </div>
+            <div class="footer-right">Built with C++ &amp; Node.js</div>
+        </footer>
     </div>
 
-    <!-- Toasts -->
-    <div id="error-toast" class="toast toast-error"></div>
-    <div id="success-toast" class="toast toast-success"></div>
-
     <script src="/socket.io/socket.io.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/socket.js"></script>
-    <script src="js/map-renderer.js"></script>
-    <script src="js/ui-controller.js"></script>
-    <script src="js/app.js"></script>
+    <script>
+        // Lightweight live counts for the footer (no app logic needed here).
+        try {
+            const s = io();
+            s.on('state:init', (snap) => {
+                if (snap && snap.stats) {
+                    document.getElementById('f-drivers').textContent = snap.stats.totalDrivers;
+                    document.getElementById('f-nodes').textContent = snap.stats.graphNodes;
+                }
+            });
+            s.on('stats:update', (st) => {
+                if (st) {
+                    document.getElementById('f-drivers').textContent = st.totalDrivers;
+                    document.getElementById('f-nodes').textContent = st.graphNodes;
+                }
+            });
+        } catch (e) {}
+    </script>
 </body>
 </html>

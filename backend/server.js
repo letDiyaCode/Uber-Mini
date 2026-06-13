@@ -112,6 +112,12 @@ app.post('/api/rides', (req, res) => {
     res.status(result.success ? 200 : 400).json(result);
 });
 
+app.get('/api/rides', (req, res) => {
+    const pid = req.query.passengerId;
+    const data = pid ? rideService.getActiveRidesForPassenger(pid) : [];
+    res.json({ success: true, data });
+});
+
 app.get('/api/rides/:rideId', (req, res) => {
     const ride = rideService.getRide(req.params.rideId);
     if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
@@ -159,6 +165,7 @@ rideService.setIo(io);
 
 io.on('connection', (socket) => {
     socket.emit('state:init', rideService.getSnapshot());
+    socket.data.claimed = new Set();
 
     socket.on('ride:request', (payload, ack) => {
         const pickup = parseNode(payload.pickup);
@@ -179,6 +186,26 @@ io.on('connection', (socket) => {
     socket.on('ride:cancel', (payload, ack) => {
         const result = rideService.cancelRide(payload.rideId, 'rider');
         if (ack) ack(result);
+    });
+
+    // Driver UI claims a driver identity to receive/accept ride offers.
+    socket.on('driver:claim', (payload, ack) => {
+        const result = rideService.claimDriver(payload.driverId);
+        if (result.success) socket.data.claimed.add(payload.driverId);
+        if (ack) ack(result);
+    });
+
+    socket.on('driver:release', (payload, ack) => {
+        rideService.releaseDriver(payload.driverId);
+        socket.data.claimed.delete(payload.driverId);
+        if (ack) ack({ success: true });
+    });
+
+    socket.on('disconnect', () => {
+        // Release any drivers this client was controlling.
+        for (const driverId of socket.data.claimed) {
+            rideService.releaseDriver(driverId);
+        }
     });
 });
 

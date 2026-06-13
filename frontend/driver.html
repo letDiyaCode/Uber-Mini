@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uber Mini · Driver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="aurora"></div>
+
+    <div class="app">
+        <nav class="nav glass">
+            <a class="nav-brand" href="index.html"><span class="nav-logo">🚗</span> UBER<b>MINI</b></a>
+            <div class="nav-links">
+                <a href="rider.html" class="nav-link">🧍 Ride</a>
+                <a href="driver.html" class="nav-link active">🚗 Drive</a>
+            </div>
+        </nav>
+
+        <header class="topbar glass">
+            <div class="brand">
+                <div class="brand-logo">🚗</div>
+                <div class="brand-text">
+                    <h1>DRIVER</h1>
+                    <p>Go online and accept ride requests</p>
+                </div>
+            </div>
+
+            <div class="stat-chips">
+                <div class="chip">
+                    <span class="chip-icon">📡</span>
+                    <div><span class="chip-value" id="status-chip">Offline</span><span class="chip-label">Status</span></div>
+                </div>
+                <div class="chip">
+                    <span class="chip-icon">✅</span>
+                    <div><span class="chip-value" id="trips-value">0</span><span class="chip-label">Trips today</span></div>
+                </div>
+                <div class="chip chip-surge">
+                    <span class="chip-icon">💰</span>
+                    <div><span class="chip-value" id="earnings-value">₹0</span><span class="chip-label">Earnings</span></div>
+                </div>
+            </div>
+
+            <div id="connection-badge" class="connection-badge offline">● connecting…</div>
+        </header>
+
+        <main class="layout">
+            <section class="map-card glass">
+                <div class="map-head">
+                    <h2><span class="live-dot"></span> Your Map</h2>
+                    <div class="map-controls">
+                        <button id="zoom-in-btn" class="icon-btn" title="Zoom in">+</button>
+                        <button id="zoom-out-btn" class="icon-btn" title="Zoom out">−</button>
+                        <button id="reset-view-btn" class="icon-btn" title="Reset view">⟳</button>
+                        <button id="toggle-labels-btn" class="icon-btn" title="Toggle labels">🏷️</button>
+                    </div>
+                </div>
+                <div class="map-container">
+                    <canvas id="city-map"></canvas>
+                    <div id="map-tooltip" class="map-tooltip"></div>
+                    <div class="map-legend glass">
+                        <div class="legend-row"><span class="dot dot-pickup"></span>Pickup</div>
+                        <div class="legend-row"><span class="dot dot-dest"></span>Destination</div>
+                        <div class="legend-row"><span class="dot dot-avail"></span>Available</div>
+                        <div class="legend-row"><span class="dot dot-assigned"></span>You</div>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="side">
+                <!-- Go online -->
+                <div class="panel glass">
+                    <div class="panel-title">Driver profile</div>
+                    <div class="field" style="margin-bottom:12px;">
+                        <select id="driver-select">
+                            <option value="">Choose your driver profile…</option>
+                        </select>
+                    </div>
+                    <div id="driver-card-live"></div>
+                    <button class="btn btn-primary" id="online-toggle" disabled><span>Go online</span></button>
+                </div>
+
+                <!-- Incoming request -->
+                <div class="panel glass offer-panel" id="offer-section" style="display:none;">
+                    <div class="panel-title">🔔 New ride request</div>
+                    <div id="offer-content"></div>
+                    <div class="offer-actions">
+                        <button class="btn btn-danger" id="decline-btn">Decline</button>
+                        <button class="btn btn-primary" id="accept-btn">Accept</button>
+                    </div>
+                </div>
+
+                <!-- Current trip -->
+                <div class="panel glass" id="trip-section" style="display:none;">
+                    <div class="panel-title">Current trip</div>
+                    <div id="trip-content"></div>
+                </div>
+
+                <!-- Activity -->
+                <div class="panel glass">
+                    <div class="panel-title">Live activity</div>
+                    <div id="activity-log" class="activity-log"></div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <div id="error-toast" class="toast toast-error"></div>
+    <div id="success-toast" class="toast toast-success"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/socket.js"></script>
+    <script src="js/map-renderer.js"></script>
+    <script src="js/driver-app.js"></script>
+</body>
+</html>

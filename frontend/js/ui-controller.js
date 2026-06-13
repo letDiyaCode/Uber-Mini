@@ -95,7 +95,7 @@ class UIController {
         if (stats.availableDrivers !== undefined) this.availableDriversStat.textContent = stats.availableDrivers;
         if (stats.activeRides !== undefined) this.activeRidesStat.textContent = stats.activeRides;
         if (stats.graphNodes !== undefined) this.totalNodesStat.textContent = stats.graphNodes;
-        if (stats.surge !== undefined) {
+        if (stats.surge !== undefined && this.surgeStat) {
             this.surgeStat.textContent = `${Number(stats.surge).toFixed(1)}x`;
             this.surgeStat.style.color = stats.surge > 1 ? '#f0ad4e' : '#5cb85c';
         }
@@ -103,10 +103,14 @@ class UIController {
 
     displayDrivers(drivers) {
         this.driverList.innerHTML = '';
+        const countEl = document.getElementById('driver-count');
         if (!drivers || drivers.length === 0) {
-            this.driverList.innerHTML = '<p>No drivers</p>';
+            this.driverList.innerHTML = '<p class="muted">No drivers</p>';
+            if (countEl) countEl.textContent = '';
             return;
         }
+        const available = drivers.filter((d) => d.status === 'available').length;
+        if (countEl) countEl.textContent = `${available} available · ${drivers.length} total`;
         const order = { available: 0, offered: 1, enroute_pickup: 2, arrived: 3, on_trip: 4, offline: 5 };
         [...drivers].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).forEach((driver) => {
             const card = document.createElement('div');
@@ -167,20 +171,36 @@ class UIController {
 
         return `
             <div class="ride-card-block">
-                <div class="ride-card-route">${ride.pickupName} → ${ride.destinationName}</div>
+                <div class="ride-card-route">${ride.pickupName} <span class="arrow">→</span> ${ride.destinationName}</div>
                 <div class="status-badge status-${ride.status.toLowerCase()}">${RIDE_STATUS_LABEL[ride.status] || ride.status}</div>
+                ${this._stepperHtml(ride.status)}
                 ${driverBlock}
                 <div class="result-card">
                     <div class="result-detail"><span>Distance</span><strong>${ride.tripDistanceKm} km</strong></div>
                     <div class="result-detail"><span>Duration</span><strong>${ride.tripDurationMin} min</strong></div>
                 </div>
-                <div class="result-card" style="border-left-color:#f0ad4e;">
-                    <div class="result-detail fare-total"><span>${ride.fareFinal ? 'Final Fare' : 'Fare'} ${surgeTag}</span><strong>${fare.currency}${fare.total}</strong></div>
+                <div class="result-card">
+                    <div class="result-detail fare-total"><span>${ride.fareFinal ? 'Final fare' : 'Fare'} ${surgeTag}</span><strong>${fare.currency}${fare.total}</strong></div>
                 </div>
                 ${this._renderTimeline(ride.timeline)}
                 ${cancelBtn}
             </div>
         `;
+    }
+
+    _stepperHtml(status) {
+        if (['CANCELLED', 'NO_DRIVERS'].includes(status)) return '';
+        const steps = ['Request', 'Driver', 'Pickup', 'Trip', 'Done'];
+        const idx = {
+            REQUESTED: 0, OFFERED: 1, ACCEPTED: 1, ARRIVING: 2,
+            ARRIVED: 2, IN_PROGRESS: 3, COMPLETED: 4,
+        }[status] ?? 0;
+        const items = steps.map((s, i) => {
+            const cls = i < idx ? 'done' : (i === idx ? 'active' : '');
+            const mark = i < idx ? '✓' : (i + 1);
+            return `<div class="step ${cls}"><div class="bullet">${mark}</div><div class="step-label">${s}</div></div>`;
+        }).join('');
+        return `<div class="stepper">${items}</div>`;
     }
 
     _renderTimeline(timeline) {
@@ -201,7 +221,7 @@ class UIController {
     }
 
     setConnection(connected) {
-        this.connectionBadge.textContent = connected ? '● live' : '● disconnected';
+        this.connectionBadge.textContent = connected ? '● Live' : '● Reconnecting…';
         this.connectionBadge.className = 'connection-badge ' + (connected ? 'online' : 'offline');
     }
 

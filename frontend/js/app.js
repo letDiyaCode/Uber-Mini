@@ -4,13 +4,58 @@ class App {
         this.uiController = new UIController();
         this.graphData = null;
 
-        // Owned rides (requested from this client): rideId -> ride view.
         this.rides = new Map();
-        // Last seen status per ride (to log only on change).
         this.lastStatus = new Map();
         this.estimateTimer = null;
+        this._resumed = false;
+        this.passengerId = this._passengerId();
+
+        this.viewBook = document.getElementById('view-book');
+        this.viewTrack = document.getElementById('view-track');
 
         this.init();
+    }
+
+    _passengerId() {
+        let id = null;
+        try { id = localStorage.getItem('umini_pid'); } catch (e) {}
+        if (!id) {
+            id = 'rider-' + Math.random().toString(36).slice(2, 10);
+            try { localStorage.setItem('umini_pid', id); } catch (e) {}
+        }
+        return id;
+    }
+
+    async resumeRides() {
+        if (this._resumed) return;
+        this._resumed = true;
+        try {
+            const res = await apiClient.getMyRides(this.passengerId);
+            const list = res.data || [];
+            list.forEach((r) => {
+                this.rides.set(r.id, r);
+                this.lastStatus.set(r.id, r.status);
+            });
+            if (list.length) {
+                this.refreshRides();
+                this.showView('track');
+            }
+        } catch (e) { /* nothing to resume */ }
+    }
+
+    showView(name) {
+        const track = name === 'track';
+        this.viewBook.classList.toggle('active', !track);
+        this.viewTrack.classList.toggle('active', track);
+        if (track) {
+            // Canvas was hidden; recompute size and reserve room for the ride card.
+            requestAnimationFrame(() => {
+                const overlay = document.querySelector('.track-overlay');
+                const absolute = overlay && getComputedStyle(overlay).position === 'absolute';
+                this.mapRenderer.rightInset = absolute ? overlay.offsetWidth + 28 : 0;
+                this.mapRenderer.resize();
+            });
+        }
     }
 
     async init() {
@@ -36,6 +81,7 @@ class App {
             this.uiController.displayDrivers(snapshot.drivers);
             this.uiController.updateStats(snapshot.stats);
             this.uiController.addActivity('Connected to live system');
+            this.resumeRides();
         });
 
         live.on('drivers', (drivers) => {
@@ -46,8 +92,7 @@ class App {
         live.on('stats', (stats) => this.uiController.updateStats(stats));
 
         live.on('ride', (ride) => {
-            // Only react to rides this client owns.
-            if (!this.rides.has(ride.id)) return;
+            if (!this.rides.has(ride.id) && ride.passengerId !== this.passengerId) return;
             this.rides.set(ride.id, ride);
             this.refreshRides();
             this.handleRideEvent(ride);
@@ -62,7 +107,7 @@ class App {
             await this.handleRideRequest();
         });
 
-        // Per-ride cancel (event delegation).
+        // Per-ride cancel
         this.uiController.rideStatusContent.addEventListener('click', async (e) => {
             const btn = e.target.closest('.cancel-ride-btn');
             if (!btn) return;
@@ -88,6 +133,26 @@ class App {
             this.mapRenderer.setDestinationSelection(isNaN(id) ? null : id);
             this.refreshEstimate();
         });
+
+        const swapBtn = document.getElementById('swap-btn');
+        if (swapBtn) {
+            swapBtn.addEventListener('click', () => {
+                const p = this.uiController.pickupSelect.value;
+                const d = this.uiController.destinationSelect.value;
+                this.uiController.pickupSelect.value = d;
+                this.uiController.destinationSelect.value = p;
+                const pid = parseInt(d, 10);
+                const did = parseInt(p, 10);
+                this.mapRenderer.setPickupSelection(isNaN(pid) ? null : pid);
+                this.mapRenderer.setDestinationSelection(isNaN(did) ? null : did);
+                this.refreshEstimate();
+            });
+        }
+
+        const bookAnother = document.getElementById('book-another');
+        if (bookAnother) {
+            bookAnother.addEventListener('click', () => this.showView('book'));
+        }
     }
 
     refreshRides() {
@@ -129,12 +194,13 @@ class App {
 
         this.uiController.disableForm();
         try {
-            const res = await apiClient.requestRide(pickup, destination, this.uiController.selectedVehicle);
+            const res = await apiClient.requestRide(pickup, destination, this.uiController.selectedVehicle, this.passengerId);
             const ride = res.data;
             this.rides.set(ride.id, ride);
             this.refreshRides();
             this.handleRideEvent(ride);
             this.uiController.addActivity(`Ride requested: ${ride.pickupName} → ${ride.destinationName}`);
+            this.showView('track');
         } catch (err) {
             this.uiController.showError(err.message);
         } finally {
@@ -143,7 +209,6 @@ class App {
     }
 
     handleRideEvent(ride) {
-        // Log/notify only when the status actually changes.
         if (this.lastStatus.get(ride.id) === ride.status) return;
         this.lastStatus.set(ride.id, ride.status);
 
@@ -183,18 +248,15 @@ class App {
     }
 
     scheduleRemoval(rideId) {
-        // Keep the final card visible briefly, then remove this ride only.
+        // Keep the final card visible briefly, then remove this ride.
         setTimeout(() => {
             this.rides.delete(rideId);
             this.lastStatus.delete(rideId);
             this.refreshRides();
+            if (this.rides.size === 0) this.showView('book');
         }, 6000);
     }
 
-    /**
-     * When a ride ends, clear the form selection if it still holds that ride's
-     * pickup/destination, so the finished trip's markers/selectors reset.
-     */
     resetSelectionIfMatches(ride) {
         const p = parseInt(this.uiController.pickupSelect.value, 10);
         const d = parseInt(this.uiController.destinationSelect.value, 10);
@@ -210,7 +272,6 @@ class App {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 
-    // Continuous redraw for smooth driver movement / pulsing markers.
     setInterval(() => {
         if (window.app && window.app.mapRenderer) {
             window.app.mapRenderer.render();

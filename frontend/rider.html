@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uber Mini · Rider</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="aurora"></div>
+
+    <div class="app">
+        <nav class="nav glass">
+            <a class="nav-brand" href="index.html"><span class="nav-logo">🚗</span> UBER<b>MINI</b></a>
+            <div class="nav-links">
+                <a href="rider.html" class="nav-link active">🧍 Ride</a>
+                <a href="driver.html" class="nav-link">🚗 Drive</a>
+            </div>
+        </nav>
+
+        <header class="topbar glass">
+            <div class="brand">
+                <div class="brand-logo">🧍</div>
+                <div class="brand-text">
+                    <h1>RIDER</h1>
+                    <p>Book a ride and track it live</p>
+                </div>
+            </div>
+            <div class="stat-chips">
+                <div class="chip"><span class="chip-icon">🟢</span><div><span class="chip-value" id="available-drivers">0</span><span class="chip-label">Available</span></div></div>
+                <div class="chip"><span class="chip-icon">🛣️</span><div><span class="chip-value" id="active-rides">0</span><span class="chip-label">Active rides</span></div></div>
+                <div class="chip"><span class="chip-icon">📍</span><div><span class="chip-value" id="total-nodes">0</span><span class="chip-label">Locations</span></div></div>
+            </div>
+            <div id="connection-badge" class="connection-badge offline">● connecting…</div>
+        </header>
+
+        <div class="rider-stage">
+            <!-- STEP 1 — Booking -->
+            <section id="view-book" class="view active">
+                <div class="book-wrap">
+                    <div class="panel glass book-card">
+                        <div class="book-heading">
+                            <h2>Where to?</h2>
+                            <p>Pick your route and ride, get a fare instantly.</p>
+                        </div>
+                        <form id="ride-request-form">
+                            <div class="route-inputs">
+                                <div class="field">
+                                    <span class="field-dot pickup"></span>
+                                    <select id="pickup-select" required><option value="">Pickup location</option></select>
+                                </div>
+                                <button type="button" id="swap-btn" class="swap-btn" title="Swap">⇅</button>
+                                <div class="field">
+                                    <span class="field-dot dest"></span>
+                                    <select id="destination-select" required><option value="">Destination</option></select>
+                                </div>
+                            </div>
+                            <div class="vehicle-label">Choose a ride</div>
+                            <div id="vehicle-options" class="vehicle-options"></div>
+                            <div id="fare-estimate" class="fare-estimate" style="display:none;"></div>
+                            <button type="submit" class="btn btn-primary" id="request-ride-btn"><span>Request ride</span></button>
+                        </form>
+                    </div>
+
+                    <div class="book-side">
+                        <div class="panel glass">
+                            <div class="panel-title">Drivers online <span class="muted" id="driver-count"></span></div>
+                            <div id="driver-list" class="driver-list"></div>
+                        </div>
+                        <div class="panel glass">
+                            <div class="panel-title">Live activity</div>
+                            <div id="activity-log" class="activity-log"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 2 — Tracking -->
+            <section id="view-track" class="view">
+                <div class="map-card glass track-map">
+                    <div class="map-head">
+                        <h2><span class="live-dot"></span> Tracking your ride</h2>
+                        <div class="map-controls">
+                            <button id="zoom-in-btn" class="icon-btn" title="Zoom in">+</button>
+                            <button id="zoom-out-btn" class="icon-btn" title="Zoom out">−</button>
+                            <button id="reset-view-btn" class="icon-btn" title="Reset view">⟳</button>
+                            <button id="toggle-labels-btn" class="icon-btn" title="Toggle labels">🏷️</button>
+                        </div>
+                    </div>
+                    <div class="map-container">
+                        <canvas id="city-map"></canvas>
+                        <div id="map-tooltip" class="map-tooltip"></div>
+                        <button id="book-another" class="book-another">＋ Book another</button>
+                        <div class="map-legend glass">
+                            <div class="legend-row"><span class="dot dot-pickup"></span>Pickup</div>
+                            <div class="legend-row"><span class="dot dot-dest"></span>Destination</div>
+                            <div class="legend-row"><span class="dot dot-avail"></span>Available</div>
+                            <div class="legend-row"><span class="dot dot-assigned"></span>Your driver</div>
+                        </div>
+                        <div class="track-overlay">
+                            <div class="panel glass" id="ride-status-section" style="display:none;">
+                                <div class="panel-title">Your ride</div>
+                                <div id="ride-status-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="error-toast" class="toast toast-error"></div>
+    <div id="success-toast" class="toast toast-success"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/socket.js"></script>
+    <script src="js/map-renderer.js"></script>
+    <script src="js/ui-controller.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

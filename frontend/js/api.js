@@ -30,6 +30,7 @@ class ApiClient {
     }
 
     getRide(rideId) { return this.get(`/rides/${rideId}`); }
+    getMyRides(passengerId) { return this.get(`/rides?passengerId=${encodeURIComponent(passengerId)}`); }
     cancelRide(rideId) { return this.post(`/rides/${rideId}/cancel`, { by: 'rider' }); }
     acceptOffer(rideId, driverId) { return this.post(`/rides/${rideId}/accept`, { driverId }); }
     declineOffer(rideId, driverId) { return this.post(`/rides/${rideId}/decline`, { driverId }); }
