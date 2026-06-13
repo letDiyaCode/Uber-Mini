@@ -140,6 +140,87 @@ class MapRenderer {
             const factor = Math.exp(-delta * 0.005);
             this.zoomTo(this.targetScale * factor, e.clientX - rect.left, e.clientY - rect.top);
         }, { passive: false });
+
+        // Touch: one-finger pan, two-finger pinch zoom, tap to show tooltip.
+        let pinchDist = 0;
+        let touchStartX = 0, touchStartY = 0, touchMoved = false;
+
+        this.canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                this._cancelZoom();
+                this.isDragging = true;
+                touchMoved = false;
+                this.lastMouseX = touchStartX = e.touches[0].clientX;
+                this.lastMouseY = touchStartY = e.touches[0].clientY;
+            } else if (e.touches.length === 2) {
+                this.isDragging = false;
+                pinchDist = this._touchDist(e.touches);
+            }
+        }, { passive: true });
+
+        this.canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1 && this.isDragging) {
+                const t = e.touches[0];
+                const dx = t.clientX - this.lastMouseX;
+                const dy = t.clientY - this.lastMouseY;
+                if (Math.abs(t.clientX - touchStartX) > 6 || Math.abs(t.clientY - touchStartY) > 6) touchMoved = true;
+                this.offsetX += dx;
+                this.offsetY += dy;
+                this.lastMouseX = t.clientX;
+                this.lastMouseY = t.clientY;
+                this.hideTooltip();
+                this.render();
+                e.preventDefault();
+            } else if (e.touches.length === 2) {
+                const rect = this.canvas.getBoundingClientRect();
+                const d = this._touchDist(e.touches);
+                if (pinchDist > 0) {
+                    const ratio = d / pinchDist;
+                    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+                    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+                    this._pinchZoom(this.scale * ratio, mx, my);
+                }
+                pinchDist = d;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchend', (e) => {
+            // A tap (no drag) toggles the tooltip for a tapped driver.
+            if (this.isDragging && !touchMoved) {
+                const rect = this.canvas.getBoundingClientRect();
+                const driver = this._driverAt(touchStartX - rect.left, touchStartY - rect.top);
+                if (driver) this.showTooltip(driver, touchStartX - rect.left, touchStartY - rect.top);
+                else this.hideTooltip();
+            }
+            if (e.touches.length === 0) this.isDragging = false;
+            pinchDist = 0;
+        });
+    }
+
+    _touchDist(t) {
+        return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    }
+
+    _driverAt(mx, my) {
+        for (const hb of this.driverHitboxes) {
+            const dx = mx - hb.x;
+            const dy = my - hb.y;
+            if (dx * dx + dy * dy <= hb.r * hb.r) return hb.driver;
+        }
+        return null;
+    }
+
+    // Immediate (non-animated) anchored zoom for pinch gestures.
+    _pinchZoom(newScale, sx, sy) {
+        const clamped = Math.max(0.2, Math.min(3.5, newScale));
+        const lon = (sx - this.offsetX) / (10000 * this.scale) + this.centerLon;
+        const lat = this.centerLat - (sy - this.offsetY) / (10000 * this.scale);
+        this.scale = clamped;
+        this.targetScale = clamped;
+        this.offsetX = sx - (lon - this.centerLon) * 10000 * this.scale;
+        this.offsetY = sy + (lat - this.centerLat) * 10000 * this.scale;
+        this.render();
     }
 
     /**
