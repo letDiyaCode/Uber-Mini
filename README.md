@@ -2,6 +2,8 @@
 
 A real-time **ride-sharing simulation** with **Rider** and **Driver** modes.
 
+🔗 **Live demo:** [uber-mini.onrender.com](https://uber-mini.onrender.com)
+
 ---
 
 ## ✨ Features
