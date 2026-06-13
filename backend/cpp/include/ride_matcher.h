@@ -106,6 +106,16 @@ struct RideMatch {
                   totalDistance(0.0), estimatedTime(0) {}
 };
 
+// Pure routing result (no side effects on driver state)
+struct PathInfo {
+    bool found;
+    double distance;   // kilometers
+    double eta;        // minutes
+    std::vector<int> path;
+
+    PathInfo() : found(false), distance(0.0), eta(0.0) {}
+};
+
 class RideMatcher {
 private:
     Graph* graph;
@@ -134,6 +144,9 @@ public:
     RideMatch findRide(const RideRequest& request);
     void updateDriverLocation(const std::string& driverId, int newLocation);
     void setDriverAvailability(const std::string& driverId, bool isAvailable);
+
+    // Pure shortest-path query between two nodes (no side effects)
+    PathInfo computePath(int source, int destination);
 
     // Add ride request to queue
     void addRideRequest(const RideRequest& request);

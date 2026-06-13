@@ -677,3 +677,184 @@ body {
         left: 1rem;
     }
 }
+
+/* ============================================================
+   Realistic ride-hailing UI additions
+   ============================================================ */
+
+/* Connection badge */
+.connection-badge {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    box-shadow: var(--shadow);
+}
+.connection-badge.online { background: #d4edda; color: #155724; }
+.connection-badge.offline { background: #f8d7da; color: #721c24; }
+
+/* Danger button */
+.btn-danger {
+    background: var(--danger-color);
+    color: white;
+}
+.btn-danger:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+
+/* Vehicle tier selector */
+.vehicle-options {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+.vehicle-card {
+    border: 2px solid var(--border-color);
+    background: white;
+    border-radius: 8px;
+    padding: 0.5rem 0.25rem;
+    cursor: pointer;
+    text-align: center;
+    transition: var(--transition);
+}
+.vehicle-card:hover { border-color: #764ba2; }
+.vehicle-card.selected {
+    border-color: #764ba2;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+.vehicle-name { font-weight: 700; font-size: 0.85rem; }
+.vehicle-rate { font-size: 0.72rem; opacity: 0.85; }
+
+/* Fare estimate box */
+.fare-estimate {
+    background: var(--light-bg);
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin: 0.5rem 0 0.75rem;
+    border-left: 4px solid var(--warning-color);
+}
+.fare-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 0.2rem;
+}
+.fare-row.fare-total { font-size: 1rem; font-weight: 700; }
+.fare-row.fare-muted { color: var(--text-secondary); font-size: 0.72rem; }
+.surge-tag {
+    background: var(--warning-color);
+    color: #5b3b00;
+    border-radius: 10px;
+    padding: 0.05rem 0.45rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-left: 0.35rem;
+}
+
+/* Ride status badge */
+.status-badge {
+    display: inline-block;
+    padding: 0.35rem 0.8rem;
+    border-radius: 16px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+    background: #e9ecef;
+    color: #333;
+}
+.status-badge.status-offered,
+.status-badge.status-requested { background: #fff3cd; color: #856404; }
+.status-badge.status-arriving,
+.status-badge.status-accepted { background: #cce5ff; color: #004085; }
+.status-badge.status-arrived { background: #d1ecf1; color: #0c5460; }
+.status-badge.status-in_progress { background: #d4edda; color: #155724; }
+.status-badge.status-completed { background: #d4edda; color: #155724; }
+.status-badge.status-cancelled,
+.status-badge.status-no_drivers { background: #f8d7da; color: #721c24; }
+
+/* Driver offline status */
+.status-offline { background: #e2e3e5; color: #383d41; }
+
+/* Timeline */
+.timeline {
+    margin-top: 0.75rem;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 0.5rem;
+}
+.timeline-item {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.timeline-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #764ba2;
+    flex-shrink: 0;
+}
+.timeline-time { margin-left: auto; font-size: 0.7rem; opacity: 0.7; }
+
+/* Activity log entries already styled by .log-entry */
+#activity-log { max-height: 200px; }
+
+/* Vehicle icon in selector cards */
+.vehicle-icon { font-size: 1.3rem; line-height: 1.4rem; }
+
+/* Map hover tooltip */
+.map-tooltip {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    z-index: 50;
+    min-width: 170px;
+    background: rgba(33, 37, 41, 0.96);
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    box-shadow: var(--shadow-lg);
+    font-size: 0.8rem;
+}
+.map-tooltip .tt-head {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 0.3rem;
+}
+.map-tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.15rem;
+}
+.map-tooltip .tt-row span { color: #adb5bd; }
+.map-tooltip .tt-status.available { color: #5cb85c; }
+.map-tooltip .tt-status.busy { color: #f0ad4e; }
+.map-tooltip .tt-status.offline { color: #ced4da; }
+
+/* Make the driver list scroll for the larger fleet */
+.driver-list { max-height: 340px; }
+
+/* Multiple ride cards */
+.ride-card-block {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.6rem;
+    margin-bottom: 0.75rem;
+    background: #fff;
+    box-shadow: var(--shadow);
+}
+.ride-card-block:last-child { margin-bottom: 0; }
+.ride-card-route {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+    color: var(--text-primary);
+}
+.ride-card-block .result-card { margin-bottom: 0.4rem; }
+.ride-card-block .timeline { margin-top: 0.5rem; }

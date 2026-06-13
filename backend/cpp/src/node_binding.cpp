@@ -169,6 +169,7 @@ public:
             InstanceMethod("getDriver", &RideMatcherWrapper::GetDriver),
             InstanceMethod("getAllDrivers", &RideMatcherWrapper::GetAllDrivers),
             InstanceMethod("findRide", &RideMatcherWrapper::FindRide),
+            InstanceMethod("computePath", &RideMatcherWrapper::ComputePath),
             InstanceMethod("updateDriverLocation", &RideMatcherWrapper::UpdateDriverLocation),
             InstanceMethod("setDriverAvailability", &RideMatcherWrapper::SetDriverAvailability)
         });
@@ -332,6 +333,33 @@ private:
 
         matcher_->updateDriverLocation(driverId, newLocation);
         return env.Undefined();
+    }
+
+    Napi::Value ComputePath(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+
+        if (info.Length() < 2) {
+            Napi::TypeError::New(env, "Expected 2 arguments").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        int source = info[0].As<Napi::Number>().Int32Value();
+        int destination = info[1].As<Napi::Number>().Int32Value();
+
+        PathInfo result = matcher_->computePath(source, destination);
+
+        Napi::Object obj = Napi::Object::New(env);
+        obj.Set("found", Napi::Boolean::New(env, result.found));
+        obj.Set("distance", Napi::Number::New(env, result.distance));
+        obj.Set("eta", Napi::Number::New(env, result.eta));
+
+        Napi::Array path = Napi::Array::New(env, result.path.size());
+        for (size_t i = 0; i < result.path.size(); i++) {
+            path[i] = Napi::Number::New(env, result.path[i]);
+        }
+        obj.Set("path", path);
+
+        return obj;
     }
 
     Napi::Value SetDriverAvailability(const Napi::CallbackInfo& info) {

@@ -12,7 +12,7 @@
         <header class="header">
             <div class="header-content">
                 <h1 class="app-title">🚗 UBER MINI</h1>
-                <p class="app-subtitle">Real-Time Ride Sharing with DSA Visualization</p>
+                <p class="app-subtitle">Real-Time Ride Sharing with Live Matching, Pricing & Surge</p>
             </div>
             <div class="header-stats">
                 <div class="stat-card">
@@ -20,12 +20,16 @@
                     <span class="stat-value" id="available-drivers">0</span>
                 </div>
                 <div class="stat-card">
+                    <span class="stat-label">Active Rides</span>
+                    <span class="stat-value" id="active-rides">0</span>
+                </div>
+                <div class="stat-card">
                     <span class="stat-label">Total Nodes</span>
                     <span class="stat-value" id="total-nodes">0</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">Graph Edges</span>
-                    <span class="stat-value" id="total-edges">0</span>
+                    <span class="stat-label">Surge</span>
+                    <span class="stat-value" id="surge-value">1.0x</span>
                 </div>
             </div>
         </header>
@@ -35,7 +39,7 @@
             <!-- Left Panel: Map Visualization -->
             <div class="map-panel">
                 <div class="panel-header">
-                    <h2>City Map Visualization</h2>
+                    <h2>City Map — Live</h2>
                     <div class="map-controls">
                         <button id="zoom-in-btn" class="control-btn" title="Zoom In">🔍+</button>
                         <button id="zoom-out-btn" class="control-btn" title="Zoom Out">🔍-</button>
@@ -47,34 +51,30 @@
                     <canvas id="city-map"></canvas>
                     <div class="map-legend">
                         <div class="legend-item">
-                            <span class="legend-icon node-icon"></span>
-                            <span>Location Nodes</span>
+                            <span class="legend-icon node-icon"></span><span>Location</span>
                         </div>
                         <div class="legend-item">
-                            <span class="legend-icon driver-icon"></span>
-                            <span>Available Driver</span>
+                            <span class="legend-icon driver-icon"></span><span>Available Driver</span>
                         </div>
                         <div class="legend-item">
-                            <span class="legend-icon" style="background: #FFD700; box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);"></span>
-                            <span>Assigned Driver</span>
+                            <span class="legend-icon" style="background:#FFD700;box-shadow:0 0 8px rgba(255,215,0,.5);"></span><span>Your Driver</span>
                         </div>
                         <div class="legend-item">
-                            <span class="legend-icon pickup-icon"></span>
-                            <span>Pickup (Blue)</span>
+                            <span class="legend-icon pickup-icon"></span><span>Pickup</span>
                         </div>
                         <div class="legend-item">
-                            <span class="legend-icon destination-icon"></span>
-                            <span>Destination (Red)</span>
+                            <span class="legend-icon destination-icon"></span><span>Destination</span>
                         </div>
                         <div class="legend-item">
-                            <span class="legend-icon route-line"></span>
-                            <span>Route Path</span>
+                            <span class="legend-icon route-line"></span><span>Route</span>
                         </div>
-                        <div class="legend-item">
-                            <span style="font-size: 10px; font-weight: bold; color: #555;">12.5 km</span>
-                            <span>Edge Weights</span>
-                        </div>
+                        <div class="legend-item"><span>🚗</span><span>Compact</span></div>
+                        <div class="legend-item"><span>🚕</span><span>Sedan</span></div>
+                        <div class="legend-item"><span>🚙</span><span>SUV</span></div>
+                        <div class="legend-item"><span>🏎️</span><span>Luxury</span></div>
                     </div>
+                    <div id="connection-badge" class="connection-badge offline">● connecting…</div>
+                    <div id="map-tooltip" class="map-tooltip"></div>
                 </div>
             </div>
 
@@ -82,7 +82,7 @@
             <div class="control-panel">
                 <!-- Ride Request Form -->
                 <div class="panel-section">
-                    <h2 class="section-title">Request a Ride</h2>
+                    <h2 class="section-title">Book a Ride</h2>
                     <form id="ride-request-form">
                         <div class="form-group">
                             <label for="pickup-select">Pickup Location</label>
@@ -96,37 +96,36 @@
                                 <option value="">Select destination...</option>
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label>Vehicle Type</label>
+                            <div id="vehicle-options" class="vehicle-options"></div>
+                        </div>
+
+                        <!-- Fare estimate -->
+                        <div id="fare-estimate" class="fare-estimate" style="display:none;"></div>
+
                         <button type="submit" class="btn btn-primary" id="request-ride-btn">
-                            Find Driver & Calculate Route
+                            Request Ride
                         </button>
                     </form>
                 </div>
 
-                <!-- Ride Result -->
-                <div class="panel-section" id="ride-result-section" style="display: none;">
-                    <h3 class="section-title">Ride Details</h3>
-                    <div id="ride-result-content"></div>
+                <!-- Active Rides -->
+                <div class="panel-section" id="ride-status-section" style="display:none;">
+                    <h3 class="section-title">Your Rides</h3>
+                    <div id="ride-status-content"></div>
                 </div>
 
                 <!-- Driver List -->
                 <div class="panel-section">
-                    <h3 class="section-title">Available Drivers</h3>
+                    <h3 class="section-title">Drivers</h3>
                     <div id="driver-list" class="driver-list"></div>
                 </div>
 
-                <!-- Algorithm Logs -->
+                <!-- Live Activity Log -->
                 <div class="panel-section">
-                    <h3 class="section-title">Algorithm Logs</h3>
-                    <div class="tabs">
-                        <button class="tab-btn active" data-tab="dijkstra">Dijkstra</button>
-                        <button class="tab-btn" data-tab="heap">Min-Heap</button>
-                        <button class="tab-btn" data-tab="matching">Matching</button>
-                    </div>
-                    <div class="tab-content">
-                        <div id="dijkstra-logs" class="log-container active"></div>
-                        <div id="heap-logs" class="log-container"></div>
-                        <div id="matching-logs" class="log-container"></div>
-                    </div>
+                    <h3 class="section-title">Live Activity</h3>
+                    <div id="activity-log" class="log-container active"></div>
                 </div>
             </div>
         </div>
@@ -143,7 +142,7 @@
                 <div class="concept-card">
                     <div class="concept-icon">🔍</div>
                     <div class="concept-name">Dijkstra's Algorithm</div>
-                    <div class="concept-desc">Shortest path calculation</div>
+                    <div class="concept-desc">Shortest path routing</div>
                 </div>
                 <div class="concept-card">
                     <div class="concept-icon">⚡</div>
@@ -156,35 +155,31 @@
                     <div class="concept-desc">Driver database O(1) lookup</div>
                 </div>
                 <div class="concept-card">
-                    <div class="concept-icon">📋</div>
-                    <div class="concept-name">Queue</div>
-                    <div class="concept-desc">Ride request processing</div>
+                    <div class="concept-icon">🧭</div>
+                    <div class="concept-name">Spatial Grid Index</div>
+                    <div class="concept-desc">Nearest-driver candidate search</div>
                 </div>
                 <div class="concept-card">
                     <div class="concept-icon">🪟</div>
                     <div class="concept-name">Sliding Window</div>
-                    <div class="concept-desc">Demand analysis</div>
+                    <div class="concept-desc">Demand-based surge pricing</div>
                 </div>
                 <div class="concept-card">
                     <div class="concept-icon">🎯</div>
-                    <div class="concept-name">Greedy Algorithm</div>
-                    <div class="concept-desc">Nearest driver matching</div>
+                    <div class="concept-name">Greedy Matching</div>
+                    <div class="concept-desc">Lowest-ETA driver wins</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <p>Processing your request...</p>
-    </div>
-
-    <!-- Error Toast -->
+    <!-- Toasts -->
     <div id="error-toast" class="toast toast-error"></div>
     <div id="success-toast" class="toast toast-success"></div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/socket.js"></script>
     <script src="js/map-renderer.js"></script>
     <script src="js/ui-controller.js"></script>
     <script src="js/app.js"></script>

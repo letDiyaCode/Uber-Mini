@@ -5,6 +5,24 @@
  * Shows weighted edges, driver names, and real-time selection highlighting
  */
 
+// Distinct icon per vehicle tier (shared with the side driver list).
+const VEHICLE_ICONS = {
+    Compact: '🚗',
+    Sedan: '🚕',
+    SUV: '🚙',
+    Luxury: '🏎️',
+};
+const DRIVER_STATUS_LABELS = {
+    available: 'Available',
+    offered: 'Offered',
+    enroute_pickup: 'To Pickup',
+    arrived: 'Arrived',
+    on_trip: 'On Trip',
+    offline: 'Offline',
+};
+// Rides in these states no longer draw routes/markers on the map.
+const TERMINAL_RIDE_STATES = ['COMPLETED', 'CANCELLED', 'NO_DRIVERS'];
+
 class MapRenderer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
@@ -13,11 +31,12 @@ class MapRenderer {
         // Map data
         this.graph = null;
         this.drivers = [];
-        this.selectedPickup = null;
-        this.selectedDestination = null;
-        this.driverToPickupPath = [];
-        this.pickupToDestPath = [];
-        this.assignedDriver = null;
+        // Form selection (pre-request preview)
+        this.selectionPickup = null;
+        this.selectionDestination = null;
+        // Live rides currently shown on the map
+        this.activeRides = [];
+        this.activeDriverIds = new Set();
 
         // Rendering state
         this.scale = 1.0;
@@ -34,6 +53,10 @@ class MapRenderer {
         this.isDragging = false;
         this.lastMouseX = 0;
         this.lastMouseY = 0;
+
+        // Hover tooltip
+        this.tooltip = document.getElementById('map-tooltip');
+        this.driverHitboxes = []; // { driver, x, y, r } computed each draw
 
         this.initCanvas();
         this.setupEventListeners();
@@ -75,7 +98,10 @@ class MapRenderer {
                 this.lastMouseX = e.clientX;
                 this.lastMouseY = e.clientY;
 
+                this.hideTooltip();
                 this.render();
+            } else {
+                this.handleHover(e);
             }
         });
 
@@ -85,6 +111,7 @@ class MapRenderer {
 
         this.canvas.addEventListener('mouseleave', () => {
             this.isDragging = false;
+            this.hideTooltip();
         });
 
         // Mouse wheel for zoom
@@ -96,6 +123,67 @@ class MapRenderer {
             this.scale = Math.max(0.2, Math.min(3.0, this.scale + delta));
             this.render();
         });
+    }
+
+    /**
+     * Hit-test the cursor against driver markers and show a tooltip.
+     */
+    handleHover(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        let hit = null;
+        for (const hb of this.driverHitboxes) {
+            const dx = mx - hb.x;
+            const dy = my - hb.y;
+            if (dx * dx + dy * dy <= hb.r * hb.r) {
+                hit = hb.driver;
+                break;
+            }
+        }
+
+        if (hit) {
+            this.canvas.style.cursor = 'pointer';
+            this.showTooltip(hit, e.clientX - rect.left, e.clientY - rect.top);
+        } else {
+            this.canvas.style.cursor = this.isDragging ? 'grabbing' : 'grab';
+            this.hideTooltip();
+        }
+    }
+
+    showTooltip(driver, x, y) {
+        if (!this.tooltip) return;
+        const icon = VEHICLE_ICONS[driver.vehicleType] || '🚗';
+        const statusLabel = DRIVER_STATUS_LABELS[driver.status] || driver.status;
+        const statusClass = driver.status === 'available' ? 'available'
+            : driver.status === 'offline' ? 'offline' : 'busy';
+        const node = this.graph && this.graph.nodes
+            ? this.graph.nodes.find((n) => n.id === driver.currentLocation) : null;
+
+        this.tooltip.innerHTML = `
+            <div class="tt-head">${icon} ${driver.name}</div>
+            <div class="tt-row"><span>Vehicle</span><strong>${driver.vehicleType}</strong></div>
+            <div class="tt-row"><span>Status</span><strong class="tt-status ${statusClass}">${statusLabel}</strong></div>
+            <div class="tt-row"><span>Rating</span><strong>⭐ ${driver.rating}</strong></div>
+            <div class="tt-row"><span>Trips</span><strong>${driver.completedRides}</strong></div>
+            <div class="tt-row"><span>Near</span><strong>${node ? node.name : 'node ' + driver.currentLocation}</strong></div>
+        `;
+        this.tooltip.style.display = 'block';
+
+        // Position within the map container, flipping near edges.
+        const tw = this.tooltip.offsetWidth;
+        const th = this.tooltip.offsetHeight;
+        let left = x + 14;
+        let top = y + 14;
+        if (left + tw > this.canvas.width) left = x - tw - 14;
+        if (top + th > this.canvas.height) top = y - th - 14;
+        this.tooltip.style.left = `${Math.max(4, left)}px`;
+        this.tooltip.style.top = `${Math.max(4, top)}px`;
+    }
+
+    hideTooltip() {
+        if (this.tooltip) this.tooltip.style.display = 'none';
     }
 
     /**
@@ -119,7 +207,7 @@ class MapRenderer {
      * Set pickup selection (called when user selects from dropdown)
      */
     setPickupSelection(nodeId) {
-        this.selectedPickup = nodeId;
+        this.selectionPickup = nodeId;
         this.render();
     }
 
@@ -127,7 +215,7 @@ class MapRenderer {
      * Set destination selection (called when user selects from dropdown)
      */
     setDestinationSelection(nodeId) {
-        this.selectedDestination = nodeId;
+        this.selectionDestination = nodeId;
         this.render();
     }
 
@@ -135,8 +223,8 @@ class MapRenderer {
      * Clear selections
      */
     clearSelections() {
-        this.selectedPickup = null;
-        this.selectedDestination = null;
+        this.selectionPickup = null;
+        this.selectionDestination = null;
         this.render();
     }
 
@@ -221,56 +309,16 @@ class MapRenderer {
         this.render();
     }
 
-    /**
-     * Set ride details for visualization
-     */
-    setRideDetails(pickup, destination, driverToPickupPath, pickupToDestPath, driver) {
-        this.selectedPickup = pickup;
-        this.selectedDestination = destination;
-        this.driverToPickupPath = driverToPickupPath || [];
-        this.pickupToDestPath = pickupToDestPath || [];
-        this.assignedDriver = driver;
-        this.startAnimation();
-    }
-
-    /**
-     * Clear ride details
-     */
-    clearRideDetails() {
-        this.selectedPickup = null;
-        this.selectedDestination = null;
-        this.driverToPickupPath = [];
-        this.pickupToDestPath = [];
-        this.assignedDriver = null;
-        this.isAnimating = false;
+    // Render the active rides; paths are drawn statically and the moving driver
+    // marker provides the live motion.
+    setActiveRides(rides) {
+        this.activeRides = Array.isArray(rides) ? rides : [];
+        this.activeDriverIds = new Set(
+            this.activeRides
+                .filter((r) => r.driverId && !TERMINAL_RIDE_STATES.includes(r.status))
+                .map((r) => r.driverId)
+        );
         this.render();
-    }
-
-    /**
-     * Start route animation
-     */
-    startAnimation() {
-        this.isAnimating = true;
-        this.animationFrame = 0;
-        this.animate();
-    }
-
-    /**
-     * Animation loop
-     */
-    animate() {
-        if (!this.isAnimating) return;
-
-        this.animationFrame += 0.02;
-        if (this.animationFrame > 1) {
-            this.animationFrame = 1;
-        }
-
-        this.render();
-
-        if (this.animationFrame < 1) {
-            requestAnimationFrame(() => this.animate());
-        }
     }
 
     /**
@@ -343,87 +391,85 @@ class MapRenderer {
         }
     }
 
-    /**
-     * Draw route paths with animation
-     */
+    // Draw each ride's route, trimmed so only the part ahead of the driver shows.
     drawRoutePaths() {
-        // Draw driver to pickup path (green)
-        if (this.driverToPickupPath.length > 1) {
-            this.drawPath(this.driverToPickupPath, '#5cb85c', 4, this.animationFrame);
-        }
+        for (const ride of this.activeRides) {
+            const driver = ride.driverId
+                ? this.drivers.find((d) => d.id === ride.driverId) : null;
+            const from = driver && typeof driver.lat === 'number'
+                ? { lat: driver.lat, lon: driver.lon } : null;
 
-        // Draw pickup to destination path (blue to red gradient)
-        if (this.pickupToDestPath.length > 1) {
-            this.drawPath(this.pickupToDestPath, '#0066ff', 5, this.animationFrame);
+            if (ride.status === 'OFFERED' || ride.status === 'ACCEPTED' || ride.status === 'ARRIVING') {
+                // Driver heading to pickup (green), trimmed ahead of the driver.
+                this.drawRemainingPath(ride.pickupPath, from, '#5cb85c', 4);
+            } else if (ride.status === 'ARRIVED') {
+                // Upcoming trip, not yet started — show full route (blue).
+                this.drawRemainingPath(ride.tripPath, null, '#0066ff', 5);
+            } else if (ride.status === 'IN_PROGRESS') {
+                // Trip in progress (blue), trimmed ahead of the driver.
+                this.drawRemainingPath(ride.tripPath, from, '#0066ff', 5);
+            }
         }
     }
 
-    /**
-     * Draw a path with animation
-     */
-    drawPath(path, color, lineWidth, progress) {
-        if (path.length < 2) return;
+    // Remaining polyline from `fromPos` (projected onto the nearest segment) to the end.
+    _remainingFrom(coords, fromPos) {
+        let bestSeg = 0;
+        let bestDist = Infinity;
+        let bestPoint = coords[0];
+        for (let i = 0; i < coords.length - 1; i++) {
+            const ax = coords[i].lon, ay = coords[i].lat;
+            const bx = coords[i + 1].lon, by = coords[i + 1].lat;
+            const dx = bx - ax, dy = by - ay;
+            const len2 = dx * dx + dy * dy;
+            let t = len2 === 0 ? 0 : ((fromPos.lon - ax) * dx + (fromPos.lat - ay) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+            const projLon = ax + t * dx;
+            const projLat = ay + t * dy;
+            const ddx = fromPos.lon - projLon;
+            const ddy = fromPos.lat - projLat;
+            const dist = ddx * ddx + ddy * ddy;
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestSeg = i;
+                bestPoint = { lat: projLat, lon: projLon };
+            }
+        }
+        const remaining = [bestPoint];
+        for (let i = bestSeg + 1; i < coords.length; i++) remaining.push(coords[i]);
+        return remaining;
+    }
+
+    // Draw a path by node ids; if `fromPos` is given, only the part to the end is drawn.
+    drawRemainingPath(pathIds, fromPos, color, lineWidth) {
+        if (!pathIds || pathIds.length < 2) return;
+
+        const coords = pathIds
+            .map((id) => {
+                const n = this.graph.nodes.find((x) => x.id === id);
+                return n ? { lat: n.latitude, lon: n.longitude } : null;
+            })
+            .filter(Boolean);
+        if (coords.length < 2) return;
+
+        const pts = fromPos ? this._remainingFrom(coords, fromPos) : coords;
+        if (pts.length < 2) return;
 
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = lineWidth;
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
-
-        // Draw path with glow effect
         this.ctx.shadowColor = color;
         this.ctx.shadowBlur = 10;
 
         this.ctx.beginPath();
-
-        for (let i = 0; i < path.length - 1; i++) {
-            const currentNode = this.graph.nodes.find(n => n.id === path[i]);
-            const nextNode = this.graph.nodes.find(n => n.id === path[i + 1]);
-
-            if (!currentNode || !nextNode) continue;
-
-            const start = this.latLonToCanvas(currentNode.latitude, currentNode.longitude);
-            const end = this.latLonToCanvas(nextNode.latitude, nextNode.longitude);
-
-            if (i === 0) {
-                this.ctx.moveTo(start.x, start.y);
-            }
-
-            // Animate path drawing
-            const segmentProgress = Math.min(1, Math.max(0, progress * path.length - i));
-            const x = start.x + (end.x - start.x) * segmentProgress;
-            const y = start.y + (end.y - start.y) * segmentProgress;
-
-            this.ctx.lineTo(x, y);
-
-            if (segmentProgress < 1) break;
-        }
-
+        pts.forEach((p, i) => {
+            const c = this.latLonToCanvas(p.lat, p.lon);
+            if (i === 0) this.ctx.moveTo(c.x, c.y);
+            else this.ctx.lineTo(c.x, c.y);
+        });
         this.ctx.stroke();
         this.ctx.shadowBlur = 0;
-
-        // Draw animated dot at the front
-        if (progress < 1) {
-            const idx = Math.min(Math.floor(progress * (path.length - 1)), path.length - 2);
-            const currentNode = this.graph.nodes.find(n => n.id === path[idx]);
-            const nextNode = this.graph.nodes.find(n => n.id === path[idx + 1]);
-
-            if (currentNode && nextNode) {
-                const start = this.latLonToCanvas(currentNode.latitude, currentNode.longitude);
-                const end = this.latLonToCanvas(nextNode.latitude, nextNode.longitude);
-
-                const segmentProgress = (progress * (path.length - 1)) - idx;
-                const x = start.x + (end.x - start.x) * segmentProgress;
-                const y = start.y + (end.y - start.y) * segmentProgress;
-
-                this.ctx.fillStyle = color;
-                this.ctx.shadowColor = color;
-                this.ctx.shadowBlur = 15;
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, 8, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.shadowBlur = 0;
-            }
-        }
     }
 
     /**
@@ -432,15 +478,21 @@ class MapRenderer {
     drawNodes() {
         if (!this.graph.nodes) return;
 
+        // Collect endpoint nodes (drawn separately as P/D markers).
+        const endpoints = new Set();
+        if (this.selectionPickup !== null) endpoints.add(this.selectionPickup);
+        if (this.selectionDestination !== null) endpoints.add(this.selectionDestination);
+        for (const ride of this.activeRides) {
+            if (TERMINAL_RIDE_STATES.includes(ride.status)) continue;
+            endpoints.add(ride.pickup);
+            endpoints.add(ride.destination);
+        }
+
         for (const node of this.graph.nodes) {
             const pos = this.latLonToCanvas(node.latitude, node.longitude);
 
-            // Check if this node is pickup or destination
-            const isPickup = this.selectedPickup !== null && node.id === this.selectedPickup;
-            const isDestination = this.selectedDestination !== null && node.id === this.selectedDestination;
-
-            // Skip if it's pickup or destination (drawn separately)
-            if (isPickup || isDestination) continue;
+            // Skip endpoints (drawn separately)
+            if (endpoints.has(node.id)) continue;
 
             // Draw node circle
             this.ctx.fillStyle = '#6c757d';
@@ -464,155 +516,136 @@ class MapRenderer {
     }
 
     /**
-     * Draw drivers with names and colors
+     * Draw drivers with per-vehicle icons, colors and hover hitboxes.
      */
     drawDrivers() {
+        this.driverHitboxes = [];
+
         for (const driver of this.drivers) {
-            const node = this.graph.nodes.find(n => n.id === driver.currentLocation);
-            if (!node) continue;
-
-            const pos = this.latLonToCanvas(node.latitude, node.longitude);
-
-            // Check if this is the assigned driver
-            const isAssigned = this.assignedDriver && driver.id === this.assignedDriver.id;
-
-            // Driver marker with different colors
-            const pulse = Math.sin(Date.now() * 0.003) * 0.2 + 1;
-
-            if (isAssigned) {
-                // Assigned driver - special gold color
-                this.ctx.fillStyle = '#FFD700';
-                this.ctx.shadowColor = '#FFD700';
-            } else if (driver.isAvailable) {
-                // Available driver - green
-                this.ctx.fillStyle = '#5cb85c';
-                this.ctx.shadowColor = '#5cb85c';
+            // Prefer live lat/lon (smooth movement); fall back to node position.
+            let pos;
+            if (typeof driver.lat === 'number' && typeof driver.lon === 'number') {
+                pos = this.latLonToCanvas(driver.lat, driver.lon);
             } else {
-                // Busy driver - gray
-                this.ctx.fillStyle = '#999';
-                this.ctx.shadowColor = '#999';
+                const node = this.graph.nodes.find(n => n.id === driver.currentLocation);
+                if (!node) continue;
+                pos = this.latLonToCanvas(node.latitude, node.longitude);
             }
 
-            this.ctx.shadowBlur = 15 * pulse;
+            const isAssigned = this.activeDriverIds.has(driver.id);
+            const isOffline = driver.status === 'offline';
+            const pulse = Math.sin(Date.now() * 0.003) * 0.2 + 1;
+
+            let color;
+            if (isAssigned) color = '#FFD700';
+            else if (isOffline) color = '#b0b0b0';
+            else if (driver.status === 'available') color = '#5cb85c';
+            else color = '#f0ad4e'; // busy / on a ride
+
+            // Dim offline drivers.
+            this.ctx.globalAlpha = isOffline ? 0.5 : 1.0;
+
+            const radius = isAssigned ? 15 : 12;
+
+            // Marker disc.
+            this.ctx.fillStyle = color;
+            this.ctx.shadowColor = color;
+            this.ctx.shadowBlur = (isOffline ? 0 : 12) * pulse;
             this.ctx.beginPath();
-            this.ctx.arc(pos.x, pos.y, isAssigned ? 14 : 10, 0, Math.PI * 2);
+            this.ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.shadowBlur = 0;
 
-            // Driver icon
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = isAssigned ? 'bold 16px Arial' : 'bold 12px Arial';
+            // White ring around the marker.
+            this.ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+
+            // Per-vehicle icon.
+            const icon = VEHICLE_ICONS[driver.vehicleType] || '🚗';
+            this.ctx.font = isAssigned ? '18px Arial' : '15px Arial';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
-            this.ctx.fillText('🚗', pos.x, pos.y);
+            this.ctx.fillText(icon, pos.x, pos.y);
 
-            // Driver name label
+            // Name label (when zoomed in).
             if (this.scale > 0.5) {
-                // Background for name
                 const nameText = driver.name;
-                const textWidth = this.ctx.measureText(nameText).width;
-
-                this.ctx.fillStyle = isAssigned ? 'rgba(255, 215, 0, 0.9)' :
-                                     driver.isAvailable ? 'rgba(92, 184, 92, 0.9)' : 'rgba(153, 153, 153, 0.9)';
-                this.ctx.fillRect(pos.x - textWidth / 2 - 4, pos.y + 18, textWidth + 8, 18);
-
-                // Name text
-                this.ctx.fillStyle = 'white';
                 this.ctx.font = isAssigned ? 'bold 12px Arial' : '11px Arial';
+                const textWidth = this.ctx.measureText(nameText).width;
+                this.ctx.fillStyle = isAssigned ? 'rgba(255,215,0,0.95)'
+                    : isOffline ? 'rgba(120,120,120,0.9)'
+                    : driver.status === 'available' ? 'rgba(92,184,92,0.95)' : 'rgba(240,173,78,0.95)';
+                this.ctx.fillRect(pos.x - textWidth / 2 - 4, pos.y + radius + 4, textWidth + 8, 16);
+                this.ctx.fillStyle = 'white';
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
-                this.ctx.fillText(nameText, pos.x, pos.y + 27);
-
-                // Vehicle type
-                if (this.scale > 0.8) {
-                    this.ctx.fillStyle = '#333';
-                    this.ctx.font = '9px Arial';
-                    this.ctx.fillText(driver.vehicleType, pos.x, pos.y + 40);
-                }
+                this.ctx.fillText(nameText, pos.x, pos.y + radius + 12);
             }
+
+            this.ctx.globalAlpha = 1.0;
+
+            // Record hitbox for hover tooltip (slightly larger than the disc).
+            this.driverHitboxes.push({ driver, x: pos.x, y: pos.y, r: radius + 6 });
         }
     }
 
     /**
-     * Draw selected pickup and destination (REAL-TIME highlighting)
+     * Draw an endpoint marker (pickup = blue "P", destination = red "D").
      */
-    drawSelectedLocations() {
-        // Draw pickup location (BLUE) - shown immediately when selected
-        if (this.selectedPickup !== null) {
-            const node = this.graph.nodes.find(n => n.id === this.selectedPickup);
-            if (node) {
-                const pos = this.latLonToCanvas(node.latitude, node.longitude);
+    _drawEndpoint(nodeId, isPickup) {
+        if (nodeId === null || nodeId === undefined) return;
+        const node = this.graph.nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+        const pos = this.latLonToCanvas(node.latitude, node.longitude);
+        const color = isPickup ? '#0066ff' : '#ff3366';
+        const label = isPickup ? 'P' : 'D';
+        const pulse = Math.sin(Date.now() * 0.005) * 3 + 12;
 
-                // Pulsing effect
-                const pulse = Math.sin(Date.now() * 0.005) * 3 + 12;
+        this.ctx.fillStyle = color;
+        this.ctx.shadowColor = color;
+        this.ctx.shadowBlur = 20;
+        this.ctx.beginPath();
+        this.ctx.arc(pos.x, pos.y, pulse, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.shadowBlur = 0;
 
-                this.ctx.fillStyle = '#0066ff';
-                this.ctx.shadowColor = '#0066ff';
-                this.ctx.shadowBlur = 20;
-                this.ctx.beginPath();
-                this.ctx.arc(pos.x, pos.y, pulse, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+        this.ctx.fill();
 
-                // Inner circle
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.beginPath();
-                this.ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
-                this.ctx.fill();
+        this.ctx.fillStyle = color;
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(label, pos.x, pos.y);
 
-                // P label
-                this.ctx.fillStyle = '#0066ff';
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.textBaseline = 'middle';
-                this.ctx.fillText('P', pos.x, pos.y);
-
-                // Location name
-                if (this.showLabels) {
-                    this.ctx.fillStyle = '#0066ff';
-                    this.ctx.font = 'bold 14px Arial';
-                    this.ctx.fillText(node.name, pos.x, pos.y - 22);
-                }
-            }
-        }
-
-        // Draw destination location (RED) - shown immediately when selected
-        if (this.selectedDestination !== null) {
-            const node = this.graph.nodes.find(n => n.id === this.selectedDestination);
-            if (node) {
-                const pos = this.latLonToCanvas(node.latitude, node.longitude);
-
-                // Pulsing effect
-                const pulse = Math.sin(Date.now() * 0.005) * 3 + 12;
-
-                this.ctx.fillStyle = '#ff3366';
-                this.ctx.shadowColor = '#ff3366';
-                this.ctx.shadowBlur = 20;
-                this.ctx.beginPath();
-                this.ctx.arc(pos.x, pos.y, pulse, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.shadowBlur = 0;
-
-                // Inner circle
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.beginPath();
-                this.ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
-                this.ctx.fill();
-
-                // D label
-                this.ctx.fillStyle = '#ff3366';
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.textBaseline = 'middle';
-                this.ctx.fillText('D', pos.x, pos.y);
-
-                // Location name
-                if (this.showLabels) {
-                    this.ctx.fillStyle = '#ff3366';
-                    this.ctx.font = 'bold 14px Arial';
-                    this.ctx.fillText(node.name, pos.x, pos.y - 22);
-                }
-            }
+        if (this.showLabels) {
+            this.ctx.fillStyle = color;
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.fillText(node.name, pos.x, pos.y - 22);
         }
     }
+
+    // Draw pickup/destination markers for active rides and the form selection.
+    drawSelectedLocations() {
+        const drawn = new Set();
+        const mark = (nodeId, isPickup) => {
+            if (nodeId === null || nodeId === undefined) return;
+            const key = `${nodeId}-${isPickup ? 'P' : 'D'}`;
+            if (drawn.has(key)) return;
+            drawn.add(key);
+            this._drawEndpoint(nodeId, isPickup);
+        };
+
+        for (const ride of this.activeRides) {
+            if (TERMINAL_RIDE_STATES.includes(ride.status)) continue;
+            mark(ride.pickup, true);
+            mark(ride.destination, false);
+        }
+        mark(this.selectionPickup, true);
+        mark(this.selectionDestination, false);
+    }
 }
+

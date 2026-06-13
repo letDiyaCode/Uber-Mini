@@ -28,9 +28,18 @@
         ["OS=='win'", {
           "defines": [ "_HAS_EXCEPTIONS=1" ]
         }],
-        ["OS!='win'", {
-          "cflags": [ "-std=c++17" ],
-          "cflags_cc": [ "-std=c++17" ]
+        ["OS=='mac'", {
+          "cflags": [ "-std=c++17", "-fexceptions" ],
+          "cflags_cc": [ "-std=c++17", "-fexceptions" ],
+          "xcode_settings": {
+            "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
+            "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
+            "MACOSX_DEPLOYMENT_TARGET": "10.15"
+          }
+        }],
+        ["OS=='linux'", {
+          "cflags": [ "-std=c++17", "-fexceptions" ],
+          "cflags_cc": [ "-std=c++17", "-fexceptions" ]
         }]
       ]
     }

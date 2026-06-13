@@ -41,65 +41,53 @@ std::vector<std::string> CityGraphGenerator::getAllLocationNames() {
 std::vector<Driver> CityGraphGenerator::generateDrivers() {
     std::vector<Driver> drivers;
 
-    Driver d1("D001", "Rajesh Kumar", 0, "Sedan", 4.8);
-    d1.isAvailable = true;
-    d1.completedRides = 234;
-    drivers.push_back(d1);
+    struct Seed {
+        const char* id; const char* name; int node;
+        const char* type; double rating; bool avail; int rides;
+    };
 
-    Driver d2("D002", "Priya Sharma", 8, "SUV", 4.9);
-    d2.isAvailable = true;
-    d2.completedRides = 412;
-    drivers.push_back(d2);
+    // A larger fleet spread across the city and balanced across vehicle tiers.
+    static const std::vector<Seed> seeds = {
+        // Sedans
+        {"D001", "Rajesh Kumar",   0,  "Sedan",   4.8, true,  234},
+        {"D002", "Amit Patel",     15, "Sedan",   4.7, true,  189},
+        {"D003", "Kavya Iyer",     48, "Sedan",   4.7, true,  267},
+        {"D004", "Sanjay Desai",   38, "Sedan",   4.6, true,  198},
+        {"D005", "Manish Joshi",   5,  "Sedan",   4.9, true,  312},
+        {"D006", "Pooja Hegde",    20, "Sedan",   4.5, true,  142},
+        {"D007", "Ramesh Rao",     44, "Sedan",   4.8, false, 401},
+        {"D008", "Sunita Das",     11, "Sedan",   4.7, true,  220},
+        // Compacts
+        {"D009", "Sneha Reddy",    22, "Compact", 4.6, true,  156},
+        {"D010", "Deepika Nair",   25, "Compact", 4.8, true,  278},
+        {"D011", "Kiran Bedi",     3,  "Compact", 4.9, true,  333},
+        {"D012", "Alok Nath",      33, "Compact", 4.4, false, 98},
+        {"D013", "Meena Kumari",   47, "Compact", 4.7, true,  201},
+        {"D014", "Farhan Akhtar",  18, "Compact", 4.6, true,  175},
+        {"D015", "Divya Menon",    28, "Compact", 4.8, true,  254},
+        // SUVs
+        {"D016", "Priya Sharma",   8,  "SUV",     4.9, true,  412},
+        {"D017", "Vikram Singh",   30, "SUV",     4.9, true,  567},
+        {"D018", "Rahul Gupta",    12, "SUV",     4.9, true,  345},
+        {"D019", "Imran Khan",     40, "SUV",     4.7, true,  188},
+        {"D020", "Tara Singh",     6,  "SUV",     4.8, true,  299},
+        {"D021", "Zoya Ali",       36, "SUV",     4.6, false, 121},
+        {"D022", "Karan Malhotra", 49, "SUV",     4.7, true,  263},
+        // Luxury
+        {"D023", "Arjun Mehta",    42, "Luxury",  5.0, true,  89},
+        {"D024", "Neha Kapoor",    45, "Luxury",  4.9, true,  156},
+        {"D025", "Aditya Roy",     2,  "Luxury",  4.8, true,  77},
+        {"D026", "Nisha Patel",    27, "Luxury",  4.9, false, 110},
+        {"D027", "Vivaan Shah",    16, "Luxury",  5.0, true,  64},
+        {"D028", "Riya Sen",       10, "Luxury",  4.8, true,  133},
+    };
 
-    Driver d3("D003", "Amit Patel", 15, "Sedan", 4.7);
-    d3.isAvailable = true;
-    d3.completedRides = 189;
-    drivers.push_back(d3);
-
-    Driver d4("D004", "Sneha Reddy", 22, "Compact", 4.6);
-    d4.isAvailable = true;
-    d4.completedRides = 156;
-    drivers.push_back(d4);
-
-    Driver d5("D005", "Vikram Singh", 30, "SUV", 4.9);
-    d5.isAvailable = true;
-    d5.completedRides = 567;
-    drivers.push_back(d5);
-
-    Driver d6("D006", "Anjali Verma", 35, "Sedan", 4.8);
-    d6.isAvailable = false;
-    d6.completedRides = 301;
-    drivers.push_back(d6);
-
-    Driver d7("D007", "Arjun Mehta", 42, "Luxury", 5.0);
-    d7.isAvailable = true;
-    d7.completedRides = 89;
-    drivers.push_back(d7);
-
-    Driver d8("D008", "Kavya Iyer", 48, "Sedan", 4.7);
-    d8.isAvailable = true;
-    d8.completedRides = 267;
-    drivers.push_back(d8);
-
-    Driver d9("D009", "Rahul Gupta", 12, "SUV", 4.9);
-    d9.isAvailable = true;
-    d9.completedRides = 345;
-    drivers.push_back(d9);
-
-    Driver d10("D010", "Deepika Nair", 25, "Compact", 4.8);
-    d10.isAvailable = true;
-    d10.completedRides = 278;
-    drivers.push_back(d10);
-
-    Driver d11("D011", "Sanjay Desai", 38, "Sedan", 4.6);
-    d11.isAvailable = true;
-    d11.completedRides = 198;
-    drivers.push_back(d11);
-
-    Driver d12("D012", "Neha Kapoor", 45, "Luxury", 4.9);
-    d12.isAvailable = false;
-    d12.completedRides = 156;
-    drivers.push_back(d12);
+    for (const auto& s : seeds) {
+        Driver d(s.id, s.name, s.node, s.type, s.rating);
+        d.isAvailable = s.avail;
+        d.completedRides = s.rides;
+        drivers.push_back(d);
+    }
 
     return drivers;
 }
@@ -193,7 +181,7 @@ void CityGraphGenerator::createHighways(Graph* graph, const std::vector<NodeData
             nodeData[i].lat, nodeData[i].lon,
             nodeData[i + 5].lat, nodeData[i + 5].lon
         );
-        double weight = distance * 80;
+        double weight = distance;
         std::string roadName = highwayNames[dis(gen)];
         graph->addEdge(i, i + 5, weight, roadName);
     }
@@ -206,7 +194,7 @@ void CityGraphGenerator::createHighways(Graph* graph, const std::vector<NodeData
                 nodeData[i].lat, nodeData[i].lon,
                 nodeData[i + verticalStep].lat, nodeData[i + verticalStep].lon
             );
-            double weight = distance * 80;
+            double weight = distance;
             graph->addEdge(i, i + verticalStep, weight, "Highway North-South");
         }
     }
@@ -225,7 +213,7 @@ void CityGraphGenerator::createArterialRoads(Graph* graph, const std::vector<Nod
             );
 
             if (distance > 1.0 && distance < 4.0 && probGen(gen) < 0.3) {
-                double weight = distance * 100;
+                double weight = distance;
                 std::string roadName = arterialNames[nameGen(gen)];
                 graph->addEdge(i, j, weight, roadName);
             }
@@ -247,7 +235,7 @@ void CityGraphGenerator::createLocalStreets(Graph* graph, const std::vector<Node
             );
 
             if (distance < 1.5 && probGen(gen) < 0.5) {
-                double weight = distance * 120;
+                double weight = distance;
                 int streetNumber = numGen(gen);
                 std::string roadName = std::to_string(streetNumber) + getOrdinal(streetNumber) + " " + streetNames[nameGen(gen)];
                 graph->addEdge(i, j, weight, roadName);
@@ -288,7 +276,7 @@ void CityGraphGenerator::createRingRoads(Graph* graph, const std::vector<NodeDat
         );
 
         if (distance < 3.0) {
-            double weight = distance * 90;
+            double weight = distance;
             graph->addEdge(nodeId1, nodeId2, weight, "Inner Ring Road");
         }
     }
@@ -305,7 +293,7 @@ void CityGraphGenerator::createRingRoads(Graph* graph, const std::vector<NodeDat
         );
 
         if (distance < 4.0) {
-            double weight = distance * 90;
+            double weight = distance;
             graph->addEdge(nodeId1, nodeId2, weight, "Outer Ring Road");
         }
     }
@@ -329,7 +317,7 @@ void CityGraphGenerator::createShortcuts(Graph* graph, const std::vector<NodeDat
             );
 
             if (distance > 2.0 && distance < 6.0) {
-                double weight = distance * 85;
+                double weight = distance;
                 std::string roadName = shortcutNames[nameDis(gen)] + " " + std::to_string(i + 1);
                 graph->addEdge(node1, node2, weight, roadName);
             }
@@ -388,7 +376,7 @@ void CityGraphGenerator::ensureConnectivity(Graph* graph) {
         Node n2 = graph->getNode(node2);
 
         double distance = calculateDistance(n1.latitude, n1.longitude, n2.latitude, n2.longitude);
-        double weight = distance * 100;
+        double weight = distance;
 
         graph->addEdge(node1, node2, weight, "Connector Highway " + std::to_string(i + 1));
     }

@@ -318,6 +318,23 @@ void RideMatcher::setDriverAvailability(const std::string& driverId, bool isAvai
     driverManager.updateDriverAvailability(driverId, isAvailable);
 }
 
+PathInfo RideMatcher::computePath(int source, int destination) {
+    PathInfo info;
+
+    if (!graph->nodeExists(source) || !graph->nodeExists(destination)) {
+        return info;
+    }
+
+    Dijkstra dijkstra(*graph);
+    PathResult result = dijkstra.findShortestPath(source, destination);
+
+    info.found = result.found;
+    info.distance = result.totalDistance;
+    info.eta = result.estimatedTime;
+    info.path = result.path;
+    return info;
+}
+
 RideMatch RideMatcher::findRide(const RideRequest& request) {
     RideMatch match;
 

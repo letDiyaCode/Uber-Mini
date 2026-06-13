@@ -1,277 +1,223 @@
-/**
- * app.js
- *
- * Main application controller
- * Coordinates map renderer, UI controller, and API client
- */
-
 class App {
     constructor() {
         this.mapRenderer = new MapRenderer('city-map');
         this.uiController = new UIController();
         this.graphData = null;
-        this.driversData = null;
+
+        // Owned rides (requested from this client): rideId -> ride view.
+        this.rides = new Map();
+        // Last seen status per ride (to log only on change).
+        this.lastStatus = new Map();
+        this.estimateTimer = null;
 
         this.init();
     }
 
-    /**
-     * Initialize application
-     */
     async init() {
-        console.log('Initializing Uber Mini application...');
-
         try {
-            // Show loading
-            this.uiController.showLoading();
-
-            // Load initial data
-            await this.loadGraphData();
-            await this.loadDrivers();
-
-            // Setup event listeners
-            this.setupEventListeners();
-
-            // Hide loading
-            this.uiController.hideLoading();
-
-            this.uiController.showSuccess('System initialized successfully!');
-
-            console.log('Application initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize application:', error);
-            this.uiController.hideLoading();
-            this.uiController.showError('Failed to initialize system: ' + error.message);
+            const tiers = await apiClient.getVehicleTiers();
+            this.uiController.renderVehicleTiers(tiers.data, () => this.refreshEstimate());
+        } catch (e) {
+            console.error('Failed to load vehicle tiers', e);
         }
+
+        this.setupLiveConnection();
+        this.setupEventListeners();
     }
 
-    /**
-     * Load graph data
-     */
-    async loadGraphData() {
-        try {
-            const response = await apiClient.getGraph();
+    setupLiveConnection() {
+        live.on('status', ({ connected }) => this.uiController.setConnection(connected));
 
-            if (response.success) {
-                this.graphData = response.data;
-                this.mapRenderer.loadGraph(this.graphData);
-                this.uiController.populateLocations(this.graphData.nodes);
+        live.on('init', (snapshot) => {
+            this.graphData = snapshot.graph;
+            this.mapRenderer.loadGraph(this.graphData);
+            this.uiController.populateLocations(this.graphData.nodes);
+            this.mapRenderer.loadDrivers(snapshot.drivers);
+            this.uiController.displayDrivers(snapshot.drivers);
+            this.uiController.updateStats(snapshot.stats);
+            this.uiController.addActivity('Connected to live system');
+        });
 
-                // Update stats
-                const availableDrivers = this.driversData
-                    ? this.driversData.filter(d => d.isAvailable).length
-                    : 0;
+        live.on('drivers', (drivers) => {
+            this.mapRenderer.loadDrivers(drivers);
+            this.uiController.displayDrivers(drivers);
+        });
 
-                this.uiController.updateStats(
-                    availableDrivers,
-                    this.graphData.numVertices,
-                    this.graphData.edges.length
-                );
+        live.on('stats', (stats) => this.uiController.updateStats(stats));
 
-                console.log('Graph data loaded:', this.graphData);
-            } else {
-                throw new Error('Failed to load graph data');
-            }
-        } catch (error) {
-            console.error('Error loading graph:', error);
-            throw error;
-        }
+        live.on('ride', (ride) => {
+            // Only react to rides this client owns.
+            if (!this.rides.has(ride.id)) return;
+            this.rides.set(ride.id, ride);
+            this.refreshRides();
+            this.handleRideEvent(ride);
+        });
+
+        live.connect();
     }
 
-    /**
-     * Load drivers
-     */
-    async loadDrivers() {
-        try {
-            const response = await apiClient.getDrivers();
-
-            if (response.success) {
-                this.driversData = response.data;
-                this.mapRenderer.loadDrivers(this.driversData);
-                this.uiController.displayDrivers(this.driversData);
-
-                // Update available drivers stat
-                const availableDrivers = this.driversData.filter(d => d.isAvailable).length;
-                this.uiController.updateStats(
-                    availableDrivers,
-                    this.graphData ? this.graphData.numVertices : 0,
-                    this.graphData ? this.graphData.edges.length : 0
-                );
-
-                console.log('Drivers loaded:', this.driversData);
-            } else {
-                throw new Error('Failed to load drivers');
-            }
-        } catch (error) {
-            console.error('Error loading drivers:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Setup event listeners
-     */
     setupEventListeners() {
-        // Ride request form
         this.uiController.rideForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             await this.handleRideRequest();
         });
 
-        // Map control buttons
-        document.getElementById('zoom-in-btn').addEventListener('click', () => {
-            this.mapRenderer.zoomIn();
+        // Per-ride cancel (event delegation).
+        this.uiController.rideStatusContent.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.cancel-ride-btn');
+            if (!btn) return;
+            try {
+                await apiClient.cancelRide(btn.dataset.rideId);
+            } catch (err) {
+                this.uiController.showError(err.message);
+            }
         });
 
-        document.getElementById('zoom-out-btn').addEventListener('click', () => {
-            this.mapRenderer.zoomOut();
-        });
+        document.getElementById('zoom-in-btn').addEventListener('click', () => this.mapRenderer.zoomIn());
+        document.getElementById('zoom-out-btn').addEventListener('click', () => this.mapRenderer.zoomOut());
+        document.getElementById('reset-view-btn').addEventListener('click', () => this.mapRenderer.resetView());
+        document.getElementById('toggle-labels-btn').addEventListener('click', () => this.mapRenderer.toggleLabels());
 
-        document.getElementById('reset-view-btn').addEventListener('click', () => {
-            this.mapRenderer.resetView();
-        });
-
-        document.getElementById('toggle-labels-btn').addEventListener('click', () => {
-            this.mapRenderer.toggleLabels();
-        });
-
-        // Pickup selection - show BLUE marker immediately
         this.uiController.pickupSelect.addEventListener('change', (e) => {
-            const pickupId = parseInt(e.target.value);
-            if (!isNaN(pickupId)) {
-                this.mapRenderer.setPickupSelection(pickupId);
-            } else {
-                this.mapRenderer.clearSelections();
-            }
-            // Clear previous route but keep selections
-            if (this.mapRenderer.driverToPickupPath.length > 0) {
-                this.mapRenderer.driverToPickupPath = [];
-                this.mapRenderer.pickupToDestPath = [];
-                this.mapRenderer.assignedDriver = null;
-                this.uiController.clearRideResult();
-            }
+            const id = parseInt(e.target.value, 10);
+            this.mapRenderer.setPickupSelection(isNaN(id) ? null : id);
+            this.refreshEstimate();
         });
-
-        // Destination selection - show RED marker immediately
         this.uiController.destinationSelect.addEventListener('change', (e) => {
-            const destId = parseInt(e.target.value);
-            if (!isNaN(destId)) {
-                this.mapRenderer.setDestinationSelection(destId);
-            } else if (this.mapRenderer.selectedPickup === null) {
-                this.mapRenderer.clearSelections();
-            }
-            // Clear previous route but keep selections
-            if (this.mapRenderer.driverToPickupPath.length > 0) {
-                this.mapRenderer.driverToPickupPath = [];
-                this.mapRenderer.pickupToDestPath = [];
-                this.mapRenderer.assignedDriver = null;
-                this.uiController.clearRideResult();
-            }
+            const id = parseInt(e.target.value, 10);
+            this.mapRenderer.setDestinationSelection(isNaN(id) ? null : id);
+            this.refreshEstimate();
         });
     }
 
-    /**
-     * Handle ride request submission
-     */
+    refreshRides() {
+        const arr = [...this.rides.values()];
+        this.uiController.displayRides(arr);
+        this.mapRenderer.setActiveRides(arr);
+    }
+
+    refreshEstimate() {
+        const pickup = parseInt(this.uiController.pickupSelect.value, 10);
+        const destination = parseInt(this.uiController.destinationSelect.value, 10);
+        if (isNaN(pickup) || isNaN(destination) || pickup === destination) {
+            this.uiController.showFareEstimate(null);
+            return;
+        }
+        clearTimeout(this.estimateTimer);
+        this.estimateTimer = setTimeout(async () => {
+            try {
+                const res = await apiClient.estimate(pickup, destination, this.uiController.selectedVehicle);
+                this.uiController.showFareEstimate(res.data);
+            } catch (err) {
+                this.uiController.showFareEstimate(null);
+            }
+        }, 150);
+    }
+
     async handleRideRequest() {
+        const pickup = parseInt(this.uiController.pickupSelect.value, 10);
+        const destination = parseInt(this.uiController.destinationSelect.value, 10);
+
+        if (isNaN(pickup) || isNaN(destination)) {
+            this.uiController.showError('Please select both pickup and destination');
+            return;
+        }
+        if (pickup === destination) {
+            this.uiController.showError('Pickup and destination cannot be the same');
+            return;
+        }
+
+        this.uiController.disableForm();
         try {
-            // Get form values
-            const pickupLocation = parseInt(this.uiController.pickupSelect.value);
-            const destinationLocation = parseInt(this.uiController.destinationSelect.value);
-
-            // Validate
-            if (isNaN(pickupLocation) || isNaN(destinationLocation)) {
-                this.uiController.showError('Please select both pickup and destination locations');
-                return;
-            }
-
-            if (pickupLocation === destinationLocation) {
-                this.uiController.showError('Pickup and destination cannot be the same');
-                return;
-            }
-
-            // Show loading
-            this.uiController.showLoading();
-            this.uiController.disableForm();
-
-            // Make API request
-            const response = await apiClient.requestRide(pickupLocation, destinationLocation);
-
-            // Hide loading
-            this.uiController.hideLoading();
+            const res = await apiClient.requestRide(pickup, destination, this.uiController.selectedVehicle);
+            const ride = res.data;
+            this.rides.set(ride.id, ride);
+            this.refreshRides();
+            this.handleRideEvent(ride);
+            this.uiController.addActivity(`Ride requested: ${ride.pickupName} → ${ride.destinationName}`);
+        } catch (err) {
+            this.uiController.showError(err.message);
+        } finally {
             this.uiController.enableForm();
-
-            if (response.success) {
-                // Display result
-                this.uiController.displayRideResult(response.data);
-
-                // Visualize on map
-                this.mapRenderer.setRideDetails(
-                    pickupLocation,
-                    destinationLocation,
-                    response.data.driverToPickup.path,
-                    response.data.pickupToDestination.path,
-                    response.data.assignedDriver
-                );
-
-                // Reload drivers to update availability
-                await this.loadDrivers();
-
-                this.uiController.showSuccess('Ride matched successfully!');
-
-                console.log('Ride matched:', response.data);
-            } else {
-                this.uiController.showError(response.error || 'Failed to match ride');
-            }
-
-        } catch (error) {
-            console.error('Error requesting ride:', error);
-            this.uiController.hideLoading();
-            this.uiController.enableForm();
-            this.uiController.showError('Error: ' + error.message);
         }
     }
 
-    /**
-     * Clear ride visualization
-     */
-    clearRideVisualization() {
-        this.mapRenderer.clearRideDetails();
-        this.uiController.clearRideResult();
+    handleRideEvent(ride) {
+        // Log/notify only when the status actually changes.
+        if (this.lastStatus.get(ride.id) === ride.status) return;
+        this.lastStatus.set(ride.id, ride.status);
+
+        const who = ride.driver ? ride.driver.name : 'a driver';
+        switch (ride.status) {
+            case 'OFFERED':
+                this.uiController.addActivity(`Offered to ${who}`);
+                break;
+            case 'ARRIVING':
+                this.uiController.addActivity(`${who} is on the way (${ride.pickupEtaMin} min)`);
+                break;
+            case 'ARRIVED':
+                this.uiController.addActivity(`${who} has arrived for ${ride.pickupName}`);
+                break;
+            case 'IN_PROGRESS':
+                this.uiController.addActivity(`Trip started: ${ride.pickupName} → ${ride.destinationName}`);
+                break;
+            case 'COMPLETED':
+                this.uiController.showSuccess(`Trip completed — ${ride.fareFinal.currency}${ride.fareFinal.total}`);
+                this.uiController.addActivity(`Trip completed — ${ride.fareFinal.currency}${ride.fareFinal.total}`);
+                this.resetSelectionIfMatches(ride);
+                this.scheduleRemoval(ride.id);
+                break;
+            case 'CANCELLED':
+                this.uiController.showError('Ride cancelled');
+                this.uiController.addActivity('Ride cancelled');
+                this.resetSelectionIfMatches(ride);
+                this.scheduleRemoval(ride.id);
+                break;
+            case 'NO_DRIVERS':
+                this.uiController.showError(`No ${ride.vehicleType} drivers available nearby`);
+                this.uiController.addActivity(`No ${ride.vehicleType} drivers available`);
+                this.resetSelectionIfMatches(ride);
+                this.scheduleRemoval(ride.id);
+                break;
+        }
+    }
+
+    scheduleRemoval(rideId) {
+        // Keep the final card visible briefly, then remove this ride only.
+        setTimeout(() => {
+            this.rides.delete(rideId);
+            this.lastStatus.delete(rideId);
+            this.refreshRides();
+        }, 6000);
     }
 
     /**
-     * Refresh application data
+     * When a ride ends, clear the form selection if it still holds that ride's
+     * pickup/destination, so the finished trip's markers/selectors reset.
      */
-    async refresh() {
-        try {
-            this.uiController.showLoading();
-            await this.loadGraphData();
-            await this.loadDrivers();
-            this.clearRideVisualization();
-            this.uiController.hideLoading();
-            this.uiController.showSuccess('Data refreshed');
-        } catch (error) {
-            console.error('Error refreshing data:', error);
-            this.uiController.hideLoading();
-            this.uiController.showError('Failed to refresh data');
+    resetSelectionIfMatches(ride) {
+        const p = parseInt(this.uiController.pickupSelect.value, 10);
+        const d = parseInt(this.uiController.destinationSelect.value, 10);
+        if (p === ride.pickup && d === ride.destination) {
+            this.uiController.pickupSelect.value = '';
+            this.uiController.destinationSelect.value = '';
+            this.uiController.showFareEstimate(null);
+            this.mapRenderer.clearSelections();
         }
     }
 }
 
-// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 
-    // Start continuous rendering for driver pulse animation
+    // Continuous redraw for smooth driver movement / pulsing markers.
     setInterval(() => {
         if (window.app && window.app.mapRenderer) {
             window.app.mapRenderer.render();
         }
-    }, 50); // 20 FPS for smooth animation
+    }, 50);
 });
 
-// Handle window resize
 window.addEventListener('resize', () => {
     if (window.app && window.app.mapRenderer) {
         window.app.mapRenderer.render();

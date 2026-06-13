@@ -1,328 +1,225 @@
-/**
- * ui-controller.js
- *
- * Controls all UI interactions and updates
- * Manages form submissions, button clicks, and dynamic content
- */
+const RIDE_STATUS_LABEL = {
+    REQUESTED: 'Finding a driver…',
+    OFFERED: 'Waiting for driver to accept…',
+    ACCEPTED: 'Driver accepted',
+    ARRIVING: 'Driver on the way',
+    ARRIVED: 'Driver has arrived',
+    IN_PROGRESS: 'On trip',
+    COMPLETED: 'Trip completed',
+    CANCELLED: 'Ride cancelled',
+    NO_DRIVERS: 'No drivers available',
+};
 
 class UIController {
     constructor() {
         this.pickupSelect = document.getElementById('pickup-select');
         this.destinationSelect = document.getElementById('destination-select');
         this.rideForm = document.getElementById('ride-request-form');
-        this.rideResultSection = document.getElementById('ride-result-section');
-        this.rideResultContent = document.getElementById('ride-result-content');
+        this.vehicleOptions = document.getElementById('vehicle-options');
+        this.fareEstimate = document.getElementById('fare-estimate');
+        this.rideStatusSection = document.getElementById('ride-status-section');
+        this.rideStatusContent = document.getElementById('ride-status-content');
         this.driverList = document.getElementById('driver-list');
-        this.loadingOverlay = document.getElementById('loading-overlay');
+        this.activityLog = document.getElementById('activity-log');
         this.errorToast = document.getElementById('error-toast');
         this.successToast = document.getElementById('success-toast');
+        this.connectionBadge = document.getElementById('connection-badge');
 
-        // Stats
         this.availableDriversStat = document.getElementById('available-drivers');
+        this.activeRidesStat = document.getElementById('active-rides');
         this.totalNodesStat = document.getElementById('total-nodes');
-        this.totalEdgesStat = document.getElementById('total-edges');
+        this.surgeStat = document.getElementById('surge-value');
 
-        // Log containers
-        this.dijkstraLogs = document.getElementById('dijkstra-logs');
-        this.heapLogs = document.getElementById('heap-logs');
-        this.matchingLogs = document.getElementById('matching-logs');
-
-        this.setupEventListeners();
-
-        this.updateLogs({
-            dijkstra: ['Waiting for ride request...'],
-            heap: ['Waiting for ride request...'],
-            matching: ['Waiting for ride request...']
-        });
-
+        this.selectedVehicle = 'Sedan';
+        this.logEntries = [];
     }
 
-    /**
-     * Setup all event listeners
-     */
-    setupEventListeners() {
-        // Tab switching
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.switchTab(btn.dataset.tab);
-            });
-        });
-    }
-
-    /**
-     * Populate location dropdowns
-     */
     populateLocations(nodes) {
-        // Clear existing options
         this.pickupSelect.innerHTML = '<option value="">Select pickup location...</option>';
         this.destinationSelect.innerHTML = '<option value="">Select destination...</option>';
-
-        // Add node options
-        nodes.forEach(node => {
-            const pickupOption = document.createElement('option');
-            pickupOption.value = node.id;
-            pickupOption.textContent = `${node.name} (Node ${node.id})`;
-            this.pickupSelect.appendChild(pickupOption);
-
-            const destOption = document.createElement('option');
-            destOption.value = node.id;
-            destOption.textContent = `${node.name} (Node ${node.id})`;
-            this.destinationSelect.appendChild(destOption);
+        nodes.forEach((node) => {
+            const o1 = document.createElement('option');
+            o1.value = node.id;
+            o1.textContent = `${node.name} (#${node.id})`;
+            this.pickupSelect.appendChild(o1);
+            const o2 = o1.cloneNode(true);
+            this.destinationSelect.appendChild(o2);
         });
     }
 
-    /**
-     * Update header statistics
-     */
-    updateStats(availableDrivers, totalNodes, totalEdges) {
-        this.availableDriversStat.textContent = availableDrivers;
-        this.totalNodesStat.textContent = totalNodes;
-        this.totalEdgesStat.textContent = totalEdges;
+    renderVehicleTiers(tiers, onSelect) {
+        this.vehicleOptions.innerHTML = '';
+        Object.entries(tiers).forEach(([name, t]) => {
+            const icon = (typeof VEHICLE_ICONS !== 'undefined' && VEHICLE_ICONS[name]) || '🚗';
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'vehicle-card' + (name === this.selectedVehicle ? ' selected' : '');
+            card.dataset.vehicle = name;
+            card.innerHTML = `
+                <div class="vehicle-icon">${icon}</div>
+                <div class="vehicle-name">${name}</div>
+                <div class="vehicle-rate">₹${t.perKm}/km</div>
+            `;
+            card.addEventListener('click', () => {
+                this.selectedVehicle = name;
+                this.vehicleOptions.querySelectorAll('.vehicle-card').forEach((c) =>
+                    c.classList.toggle('selected', c.dataset.vehicle === name));
+                if (onSelect) onSelect(name);
+            });
+            this.vehicleOptions.appendChild(card);
+        });
     }
 
-    /**
-     * Display driver list
-     */
-    displayDrivers(drivers) {
-        this.driverList.innerHTML = '';
-
-        if (drivers.length === 0) {
-            this.driverList.innerHTML = '<p>No drivers available</p>';
+    showFareEstimate(est) {
+        if (!est) {
+            this.fareEstimate.style.display = 'none';
             return;
         }
+        const f = est.fare;
+        const surgeTag = est.surge > 1
+            ? `<span class="surge-tag">${est.surge}× surge</span>` : '';
+        this.fareEstimate.style.display = 'block';
+        this.fareEstimate.innerHTML = `
+            <div class="fare-row fare-total">
+                <span>Estimated Fare ${surgeTag}</span>
+                <strong>${f.currency}${f.total}</strong>
+            </div>
+            <div class="fare-row"><span>Distance</span><span>${est.distanceKm} km</span></div>
+            <div class="fare-row"><span>Duration</span><span>${est.durationMin} min</span></div>
+            <div class="fare-row fare-muted"><span>Base ${f.currency}${f.baseFare} + ${f.currency}${f.perKm}/km + ${f.currency}${f.perMin}/min + ${f.currency}${f.bookingFee} fee</span></div>
+        `;
+    }
 
-        drivers.forEach(driver => {
-            const driverCard = document.createElement('div');
-            driverCard.className = 'driver-card';
+    updateStats(stats) {
+        if (!stats) return;
+        if (stats.availableDrivers !== undefined) this.availableDriversStat.textContent = stats.availableDrivers;
+        if (stats.activeRides !== undefined) this.activeRidesStat.textContent = stats.activeRides;
+        if (stats.graphNodes !== undefined) this.totalNodesStat.textContent = stats.graphNodes;
+        if (stats.surge !== undefined) {
+            this.surgeStat.textContent = `${Number(stats.surge).toFixed(1)}x`;
+            this.surgeStat.style.color = stats.surge > 1 ? '#f0ad4e' : '#5cb85c';
+        }
+    }
 
-            driverCard.innerHTML = `
-                <div class="driver-avatar">🚗</div>
+    displayDrivers(drivers) {
+        this.driverList.innerHTML = '';
+        if (!drivers || drivers.length === 0) {
+            this.driverList.innerHTML = '<p>No drivers</p>';
+            return;
+        }
+        const order = { available: 0, offered: 1, enroute_pickup: 2, arrived: 3, on_trip: 4, offline: 5 };
+        [...drivers].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).forEach((driver) => {
+            const card = document.createElement('div');
+            card.className = 'driver-card';
+            const statusClass = driver.status === 'available' ? 'status-available'
+                : driver.status === 'offline' ? 'status-offline' : 'status-busy';
+            const icon = (typeof VEHICLE_ICONS !== 'undefined' && VEHICLE_ICONS[driver.vehicleType]) || '🚗';
+            card.innerHTML = `
+                <div class="driver-avatar">${icon}</div>
                 <div class="driver-info">
                     <div class="driver-name">${driver.name}</div>
-                    <div class="driver-details">
-                        ${driver.vehicleType} • ⭐ ${driver.rating} • ${driver.completedRides} rides
-                    </div>
+                    <div class="driver-details">${driver.vehicleType} • ⭐ ${driver.rating} • ${driver.completedRides} rides</div>
                 </div>
-                <div class="driver-status ${driver.isAvailable ? 'status-available' : 'status-busy'}">
-                    ${driver.isAvailable ? 'Available' : 'Busy'}
-                </div>
+                <div class="driver-status ${statusClass}">${this._driverStatusLabel(driver.status)}</div>
             `;
-
-            this.driverList.appendChild(driverCard);
+            this.driverList.appendChild(card);
         });
     }
 
-    /**
-     * Display ride result
-     */
-    displayRideResult(result) {
-        this.rideResultSection.style.display = 'block';
+    _driverStatusLabel(status) {
+        return {
+            available: 'Available', offered: 'Offered', enroute_pickup: 'To Pickup',
+            arrived: 'Arrived', on_trip: 'On Trip', offline: 'Offline',
+        }[status] || status;
+    }
 
-        const driver = result.assignedDriver;
-        const driverToPickup = result.driverToPickup;
-        const pickupToDest = result.pickupToDestination;
+    displayRides(rides) {
+        const active = rides || [];
+        if (active.length === 0) {
+            this.rideStatusSection.style.display = 'none';
+            this.rideStatusContent.innerHTML = '';
+            return;
+        }
+        this.rideStatusSection.style.display = 'block';
+        // Newest ride first.
+        this.rideStatusContent.innerHTML = [...active]
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .map((r) => this._rideCardHtml(r))
+            .join('');
+    }
 
-        this.rideResultContent.innerHTML = `
+    _rideCardHtml(ride) {
+        const terminal = ['COMPLETED', 'CANCELLED', 'NO_DRIVERS'].includes(ride.status);
+        const driver = ride.driver;
+        const fare = ride.fareFinal || ride.fareEstimate;
+        const icon = (typeof VEHICLE_ICONS !== 'undefined' && driver && VEHICLE_ICONS[driver.vehicleType]) || '🚗';
+        const surgeTag = ride.surge > 1 ? `<span class="surge-tag">${ride.surge}× surge</span>` : '';
+
+        const driverBlock = driver ? `
             <div class="result-card">
-                <div class="result-title">🚗 Assigned Driver</div>
-                <div style="margin-top: 0.5rem;">
-                    <strong>${driver.name}</strong><br>
-                    ${driver.vehicleType} • ⭐ ${driver.rating}
-                </div>
-            </div>
+                <div class="result-title">${icon} ${driver.name}</div>
+                <div class="result-detail"><span>Vehicle</span><strong>${driver.vehicleType} • ⭐ ${driver.rating}</strong></div>
+                ${ride.pickupEtaMin ? `<div class="result-detail"><span>Pickup ETA</span><strong>${ride.pickupEtaMin} min</strong></div>` : ''}
+            </div>` : '';
 
-            <div class="result-card">
-                <div class="result-title">📍 Driver to Pickup</div>
-                <div class="result-detail">
-                    <span>Distance:</span>
-                    <strong>${driverToPickup.distance.toFixed(2)} km</strong>
-                </div>
-                <div class="result-detail">
-                    <span>ETA:</span>
-                    <strong>${driverToPickup.eta.toFixed(1)} min</strong>
-                </div>
-                <div class="result-detail">
-                    <span>Path:</span>
-                    <strong>${driverToPickup.path.join(' → ')}</strong>
-                </div>
-            </div>
+        const cancelBtn = terminal ? '' :
+            `<button class="btn btn-danger cancel-ride-btn" data-ride-id="${ride.id}" style="margin-top:0.5rem;">Cancel Ride</button>`;
 
-            <div class="result-card">
-                <div class="result-title">🎯 Pickup to Destination</div>
-                <div class="result-detail">
-                    <span>Distance:</span>
-                    <strong>${pickupToDest.distance.toFixed(2)} km</strong>
+        return `
+            <div class="ride-card-block">
+                <div class="ride-card-route">${ride.pickupName} → ${ride.destinationName}</div>
+                <div class="status-badge status-${ride.status.toLowerCase()}">${RIDE_STATUS_LABEL[ride.status] || ride.status}</div>
+                ${driverBlock}
+                <div class="result-card">
+                    <div class="result-detail"><span>Distance</span><strong>${ride.tripDistanceKm} km</strong></div>
+                    <div class="result-detail"><span>Duration</span><strong>${ride.tripDurationMin} min</strong></div>
                 </div>
-                <div class="result-detail">
-                    <span>ETA:</span>
-                    <strong>${pickupToDest.eta.toFixed(1)} min</strong>
+                <div class="result-card" style="border-left-color:#f0ad4e;">
+                    <div class="result-detail fare-total"><span>${ride.fareFinal ? 'Final Fare' : 'Fare'} ${surgeTag}</span><strong>${fare.currency}${fare.total}</strong></div>
                 </div>
-                <div class="result-detail">
-                    <span>Path:</span>
-                    <strong>${pickupToDest.path.join(' → ')}</strong>
-                </div>
-            </div>
-
-            <div class="result-card" style="border-left-color: #5cb85c;">
-                <div class="result-title">✅ Total Journey</div>
-                <div class="result-detail">
-                    <span>Total Distance:</span>
-                    <strong>${result.totalDistance.toFixed(2)} km</strong>
-                </div>
-                <div class="result-detail">
-                    <span>Total ETA:</span>
-                    <strong>${result.totalETA.toFixed(1)} min</strong>
-                </div>
+                ${this._renderTimeline(ride.timeline)}
+                ${cancelBtn}
             </div>
         `;
-
-        // Update logs
-        this.updateLogs(result.logs);
-
-        // Scroll to result
-        this.rideResultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    /**
-     * Update algorithm logs
-     */
-    updateLogs(logs) {
-        // Dijkstra logs
-        this.dijkstraLogs.innerHTML = '';
-        if (logs.dijkstra && logs.dijkstra.length > 0) {
-            logs.dijkstra.forEach(log => {
-                const logEntry = document.createElement('div');
-                logEntry.className = 'log-entry';
-                logEntry.textContent = log;
-                this.dijkstraLogs.appendChild(logEntry);
-            });
-        } else {
-            this.dijkstraLogs.innerHTML = '<p>No Dijkstra logs available</p>';
-        }
-
-        // Heap logs
-        this.heapLogs.innerHTML = '';
-        if (logs.heap && logs.heap.length > 0) {
-            logs.heap.forEach(log => {
-                const logEntry = document.createElement('div');
-                logEntry.className = 'log-entry';
-                logEntry.textContent = log;
-                this.heapLogs.appendChild(logEntry);
-            });
-        } else {
-            this.heapLogs.innerHTML = '<p>No heap logs available</p>';
-        }
-
-        // Matching logs
-        this.matchingLogs.innerHTML = '';
-        if (logs.matching && logs.matching.length > 0) {
-            logs.matching.forEach(log => {
-                const logEntry = document.createElement('div');
-                logEntry.className = 'log-entry';
-                logEntry.textContent = log;
-                this.matchingLogs.appendChild(logEntry);
-            });
-        } else {
-            this.matchingLogs.innerHTML = '<p>No matching logs available</p>';
-        }
+    _renderTimeline(timeline) {
+        if (!timeline || timeline.length === 0) return '';
+        const items = timeline.slice(-6).map((t) => {
+            const time = new Date(t.ts).toLocaleTimeString();
+            return `<div class="timeline-item"><span class="timeline-dot"></span>${t.message} <span class="timeline-time">${time}</span></div>`;
+        }).join('');
+        return `<div class="timeline">${items}</div>`;
     }
 
-    /**
-     * Switch between log tabs
-     */
-    switchTab(tabName) {
-        // Update tab buttons
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        tabBtns.forEach(btn => {
-            if (btn.dataset.tab === tabName) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-
-        // Update tab content
-        const logContainers = document.querySelectorAll('.log-container');
-        logContainers.forEach(container => {
-            if (container.id === `${tabName}-logs`) {
-                container.classList.add('active');
-            } else {
-                container.classList.remove('active');
-            }
-        });
+    addActivity(message) {
+        const time = new Date().toLocaleTimeString();
+        this.logEntries.unshift({ time, message });
+        this.logEntries = this.logEntries.slice(0, 40);
+        this.activityLog.innerHTML = this.logEntries.map((e) =>
+            `<div class="log-entry">${e.message} <span class="timeline-time">${e.time}</span></div>`).join('');
     }
 
-    /**
-     * Show loading overlay
-     */
-    showLoading() {
-        this.loadingOverlay.classList.add('active');
+    setConnection(connected) {
+        this.connectionBadge.textContent = connected ? '● live' : '● disconnected';
+        this.connectionBadge.className = 'connection-badge ' + (connected ? 'online' : 'offline');
     }
 
-    /**
-     * Hide loading overlay
-     */
-    hideLoading() {
-        this.loadingOverlay.classList.remove('active');
+    disableForm() {
+        this.rideForm.querySelector('button[type="submit"]').disabled = true;
+    }
+    enableForm() {
+        this.rideForm.querySelector('button[type="submit"]').disabled = false;
     }
 
-    /**
-     * Show error toast
-     */
     showError(message) {
         this.errorToast.textContent = message;
         this.errorToast.classList.add('active');
-
-        setTimeout(() => {
-            this.errorToast.classList.remove('active');
-        }, 5000);
+        setTimeout(() => this.errorToast.classList.remove('active'), 4000);
     }
-
-    /**
-     * Show success toast
-     */
     showSuccess(message) {
         this.successToast.textContent = message;
         this.successToast.classList.add('active');
-
-        setTimeout(() => {
-            this.successToast.classList.remove('active');
-        }, 3000);
-    }
-
-    /**
-     * Clear ride result
-     */
-    clearRideResult() {
-        this.rideResultSection.style.display = 'none';
-        this.rideResultContent.innerHTML = '';
-        this.dijkstraLogs.innerHTML = '';
-        this.heapLogs.innerHTML = '';
-        this.matchingLogs.innerHTML = '';
-    }
-
-    /**
-     * Disable form
-     */
-    disableForm() {
-        this.pickupSelect.disabled = true;
-        this.destinationSelect.disabled = true;
-        const submitBtn = this.rideForm.querySelector('button[type="submit"]');
-        if (submitBtn) {
-            submitBtn.disabled = true;
-        }
-    }
-
-    /**
-     * Enable form
-     */
-    enableForm() {
-        this.pickupSelect.disabled = false;
-        this.destinationSelect.disabled = false;
-        const submitBtn = this.rideForm.querySelector('button[type="submit"]');
-        if (submitBtn) {
-            submitBtn.disabled = false;
-        }
+        setTimeout(() => this.successToast.classList.remove('active'), 2500);
     }
 }
