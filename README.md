@@ -1,16 +1,23 @@
-# Uber Mini Ride Sharing System
+# 🚗 Uber Mini — Ride Sharing Simulation
 
-A complete **ride-sharing matching system** demonstrating advanced **Data Structures and Algorithms** concepts with a **C++ backend** and web-based frontend.
+A real-time **ride-sharing simulation** with **Rider** and **Driver** modes.
 
 ---
 
-## 🎯 Features
+## ✨ Features
 
-- **50-node city graph** with realistic names
-- **12 drivers** (Rajesh, Priya, Amit, Sneha, etc.)
-- **5 road types** (Highway, Arterial, Local, Ring, Shortcut)
-- **Real-time route calculation** using Dijkstra
-- **Algorithm visualization** with logs
+**Two experiences, one live city**
+- **Landing page** to choose your role — Rider or Driver.
+- **Rider:** a two-step flow — pick pickup/destination and a ride type, get an upfront fare, then track the trip live on a map.
+- **Driver:** choose a driver profile, go online/offline, receive ride requests, and watch live earnings and trips.
+
+**Realistic ride-hailing behavior**
+- **50-location city graph** with named places and multiple road types.
+- **28 drivers** across **4 vehicle tiers** — Compact, Sedan, SUV, Luxury.
+- **Nearest-driver matching** of the requested type, cascading to the next driver and **falling back to other vehicle types** if needed.
+- Full **ride lifecycle**: request → matched → arriving → in-progress → completed (plus cancel).
+- **Upfront fare** per vehicle tier, **live driver movement** along the route.
+- **Real-time updates** over WebSockets — positions, statuses, and stats stream live to every page.
 
 ---
 
@@ -18,39 +25,43 @@ A complete **ride-sharing matching system** demonstrating advanced **Data Struct
 
 - **Node.js** (recommended v18)
 - **Python** 3.x (for node-gyp)
-- **C++ Compiler**:
-  - Windows: Visual Studio 2022 with C++ tools
-  - Linux: GCC/build-essential  
-  - Mac: Xcode Command Line Tools
+- **C++ Compiler**
 
- ---
- 
+---
+
 ## 🚀 Quick Start
 
 ```bash
-git clone "https://github.com/letDiyaCode/Uber-Mini"      # Clone the Repo
-npm install                                               # Builds C++ backend automatically
-npm start                                                 # Starts server on port 3000
+git clone "https://github.com/letDiyaCode/Uber-Mini"   # Clone the repo
+cd Uber-Mini
+npm install                                            # Installs deps & builds the C++ addon
+npm start                                              # Starts the server on port 3000
 ```
 
-Visit: http://localhost:3000
+Then open **http://localhost:3000** and pick Rider or Driver.
+
+State is in-memory, so restarting the server resets all rides and drivers.
 
 ---
 
 ## 📊 Technology Stack
 
-- **Backend**: C++17, Node.js N-API
-- **Server**: Express.js (HTTP wrapper)
-- **Frontend**: HTML/CSS/JavaScript
-- **Build**: node-gyp
+- **Engine:** C++17 native addon (Node.js N-API / node-gyp)
+- **Server:** Node.js + Express + Socket.IO (real-time)
+- **Frontend:** HTML / CSS / vanilla JavaScript (no framework)
 
 ---
 
-## 🎓 Learning Outcomes
+## 📁 Project Structure
 
-- C++ native addon development
-- Graph algorithms (Dijkstra)
-- Priority queues (Min-Heap)
-- HashMap implementations
-- Greedy algorithms
-- System design patterns
+```
+backend/
+  cpp/            # C++ engine: graph, dijkstra, min-heap, driver manager, ride matcher
+  lib/            # Node logic: ride lifecycle, pricing, spatial grid, geo helpers
+  server.js       # Express + Socket.IO server
+frontend/
+  index.html      # Landing (choose role)
+  rider.html      # Rider experience
+  driver.html     # Driver experience
+  js/, style.css  # Map renderer, controllers, socket client, styling
+```
